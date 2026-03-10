@@ -1,0 +1,4 @@
+Django>=5.0,<6.1
+djangorestframework>=3.14.0
+streamlit>=1.31.0
+requests>=2.31.0
