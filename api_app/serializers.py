@@ -5,9 +5,19 @@ from .models import (
 )
 
 class CustomUserSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=False, style={'input_type': 'password'})
+
     class Meta:
         model = CustomUser
-        fields = ['id', 'username', 'email', 'business_domain', 'plan_type', 'report_schedule', 'timezone']
+        fields = ['id', 'username', 'email', 'password', 'business_domain', 'plan_type', 'report_schedule', 'timezone']
+
+    def create(self, validated_data):
+        password = validated_data.pop('password', None)
+        user = CustomUser(**validated_data)
+        if password is not None:
+            user.set_password(password)
+        user.save()
+        return user
 
 class SocialProfileSerializer(serializers.ModelSerializer):
     class Meta:
