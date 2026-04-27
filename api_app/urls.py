@@ -49,4 +49,7 @@ urlpatterns = [
     # 12. Notification
     path('notifications/', views.notification_list_create, name='notification-list'),
     path('notifications/<int:pk>/', views.notification_detail, name='notification-detail'),
+
+    # 13. Dashboard Stats
+    path('dashboard-stats/', views.dashboard_stats, name='dashboard-stats'),
 ]

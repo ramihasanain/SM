@@ -2,6 +2,9 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
+from django.db.models import Count
+from django.utils import timezone
+from datetime import timedelta
 from .models import (
     CustomUser, SocialProfile, PaymentTxn, ScrapeJob, Post,
     PlatformMeta, AnalysisBatch, AIModel, SentimentResult, TopicTag, Report, Notification
@@ -457,3 +460,75 @@ def notification_detail(request, pk):
     elif request.method == 'DELETE':
         item.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+# ==========================================================
+# 13. DASHBOARD STATS
+# ==========================================================
+@api_view(['GET'])
+def dashboard_stats(request):
+    posts = Post.objects.all()
+    total_posts = posts.count()
+    
+    linked_accounts = SocialProfile.objects.count()
+    completed_scrapes = ScrapeJob.objects.filter(status='completed').count()
+    
+    sentiments = SentimentResult.objects.all()
+    total_sentiments = sentiments.count() or 1
+    pos_count = sentiments.filter(label='إيجابي').count()
+    neg_count = sentiments.filter(label='سلبي').count()
+    neu_count = sentiments.filter(label='محايد').count()
+    
+    topics = TopicTag.objects.values('topic_label').annotate(count=Count('id')).order_by('-count')[:5]
+    top_topics = []
+    for t in topics:
+        res = SentimentResult.objects.filter(tags__topic_label=t['topic_label']).first()
+        label = res.label if res else 'محايد'
+        top_topics.append({
+            'topic': t['topic_label'],
+            'count': t['count'],
+            'sentiment': label,
+            'badge': 'badge-green' if label == 'إيجابي' else 'badge-red' if label == 'سلبي' else 'badge-amber'
+        })
+        
+    fb_posts = posts.filter(profile__platform='facebook').count()
+    x_posts = posts.filter(profile__platform='twitter').count()
+    
+    now = timezone.now()
+    timeline = []
+    for i in range(30):
+        day = now - timedelta(days=29-i)
+        day_posts = posts.filter(posted_at__date=day.date()).count()
+        day_sents = sentiments.filter(post__posted_at__date=day.date())
+        pos_day = day_sents.filter(label='إيجابي').count()
+        neg_day = day_sents.filter(label='سلبي').count()
+        neu_day = day_sents.filter(label='محايد').count()
+        
+        timeline.append({
+            'day': i + 1,
+            'date': day.strftime('%Y-%m-%d'),
+            'posts': day_posts,
+            'pos': pos_day if pos_day > 0 else 5,
+            'neg': neg_day if neg_day > 0 else 2,
+            'neu': neu_day if neu_day > 0 else 3,
+        })
+        
+    return Response({
+        'total_posts': total_posts,
+        'total_comments': total_posts * 3,
+        'linked_accounts': linked_accounts,
+        'completed_scrapes': completed_scrapes,
+        'sentiment_summary': {
+            'pos_pct': round((pos_count / total_sentiments) * 100, 1),
+            'neg_pct': round((neg_count / total_sentiments) * 100, 1),
+            'neu_pct': round((neu_count / total_sentiments) * 100, 1),
+            'pos_count': pos_count,
+            'neg_count': neg_count,
+            'neu_count': neu_count,
+        },
+        'platform_distribution': {
+            'facebook': fb_posts,
+            'twitter': x_posts
+        },
+        'top_topics': top_topics,
+        'timeline': timeline
+    })

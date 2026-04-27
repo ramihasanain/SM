@@ -35,9 +35,36 @@ class ScrapeJobSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class PostSerializer(serializers.ModelSerializer):
+    sentiment = serializers.SerializerMethodField()
+    topic = serializers.SerializerMethodField()
+    platform = serializers.SerializerMethodField()
+    score = serializers.SerializerMethodField()
+
     class Meta:
         model = Post
         fields = '__all__'
+
+    def get_sentiment(self, obj):
+        sentiment = obj.sentiments.first()
+        return sentiment.label if sentiment else "محايد"
+
+    def get_score(self, obj):
+        sentiment = obj.sentiments.first()
+        if sentiment:
+            if sentiment.label == 'إيجابي': return sentiment.pos_score
+            if sentiment.label == 'سلبي': return sentiment.neg_score
+            return sentiment.neu_score
+        return 0.5
+
+    def get_topic(self, obj):
+        sentiment = obj.sentiments.first()
+        if sentiment:
+            tag = sentiment.tags.first()
+            return tag.topic_label if tag else "غير محدد"
+        return "غير محدد"
+
+    def get_platform(self, obj):
+        return obj.profile.platform if obj.profile else "facebook"
 
 class PlatformMetaSerializer(serializers.ModelSerializer):
     class Meta:
