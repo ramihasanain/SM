@@ -119,6 +119,9 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
 AUTH_USER_MODEL = 'api_app.CustomUser'
 
 REST_FRAMEWORK = {
@@ -130,3 +133,13 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ],
 }
+
+# OAuth Credentials (To be filled in production via environment variables)
+import os
+FACEBOOK_CLIENT_ID = os.environ.get('FACEBOOK_CLIENT_ID', '2021030568534896')
+FACEBOOK_CLIENT_SECRET = os.environ.get('FACEBOOK_CLIENT_SECRET', '362db6f64a46e81f5a24456614e9e192')
+FACEBOOK_REDIRECT_URI = os.environ.get('FACEBOOK_REDIRECT_URI', 'http://localhost:5173/oauth/facebook/callback')
+
+X_CLIENT_ID = os.environ.get('X_CLIENT_ID', '')
+X_CLIENT_SECRET = os.environ.get('X_CLIENT_SECRET', '')
+X_REDIRECT_URI = os.environ.get('X_REDIRECT_URI', 'http://localhost:5173/oauth/x/callback')

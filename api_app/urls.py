@@ -1,8 +1,10 @@
 from django.urls import path
 from . import views
+from . import oauth_views
 
 urlpatterns = [
     # 1. User
+    path('users/me/', views.user_me, name='user-me'),
     path('users/', views.user_list_create, name='user-list'),
     path('users/<int:pk>/', views.user_detail, name='user-detail'),
     
@@ -21,6 +23,7 @@ urlpatterns = [
     # 5. Post
     path('posts/', views.post_list_create, name='post-list'),
     path('posts/<int:pk>/', views.post_detail, name='post-detail'),
+    path('posts/<int:pk>/details/', views.post_details, name='post-details'),
 
     # 6. Platform Meta
     path('platform-metas/', views.platform_meta_list_create, name='platform-meta-list'),
@@ -52,4 +55,11 @@ urlpatterns = [
 
     # 13. Dashboard Stats
     path('dashboard-stats/', views.dashboard_stats, name='dashboard-stats'),
+
+    # 14. OAuth
+    path('oauth/facebook/login/', oauth_views.facebook_login, name='oauth-facebook-login'),
+    path('oauth/facebook/callback/', oauth_views.facebook_callback, name='oauth-facebook-callback'),
+    path('oauth/x/login/', oauth_views.x_login, name='oauth-x-login'),
+    path('oauth/x/callback/', oauth_views.x_callback, name='oauth-x-callback'),
+    path('profiles/<int:pk>/sync/', views.sync_profile, name='sync-profile'),
 ]

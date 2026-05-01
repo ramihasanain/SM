@@ -9,7 +9,7 @@ class CustomUserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CustomUser
-        fields = ['id', 'username', 'email', 'password', 'business_domain', 'plan_type', 'report_schedule', 'timezone']
+        fields = ['id', 'username', 'email', 'password', 'company_name', 'country', 'phone_number', 'business_domain', 'plan_type', 'report_schedule', 'timezone']
 
     def create(self, validated_data):
         password = validated_data.pop('password', None)
@@ -20,9 +20,14 @@ class CustomUserSerializer(serializers.ModelSerializer):
         return user
 
 class SocialProfileSerializer(serializers.ModelSerializer):
+    posts_count = serializers.SerializerMethodField()
+
     class Meta:
         model = SocialProfile
         fields = '__all__'
+
+    def get_posts_count(self, obj):
+        return obj.posts.filter(media_type='post').count()
 
 class PaymentTxnSerializer(serializers.ModelSerializer):
     class Meta:
@@ -30,6 +35,9 @@ class PaymentTxnSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class ScrapeJobSerializer(serializers.ModelSerializer):
+    profile_name = serializers.CharField(source='profile.account_name', read_only=True)
+    platform = serializers.CharField(source='profile.platform', read_only=True)
+
     class Meta:
         model = ScrapeJob
         fields = '__all__'
