@@ -143,9 +143,10 @@ def payment_txn_detail(request, pk):
 # 4. SCRAPE JOB VIEWS
 # ==========================================================
 @api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
 def scrape_job_list_create(request):
     if request.method == 'GET':
-        items = ScrapeJob.objects.all()
+        items = ScrapeJob.objects.filter(profile__user=request.user)
         serializer = ScrapeJobSerializer(items, many=True)
         return Response(serializer.data)
     elif request.method == 'POST':
@@ -156,9 +157,10 @@ def scrape_job_list_create(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
 def scrape_job_detail(request, pk):
     try:
-        item = ScrapeJob.objects.get(pk=pk)
+        item = ScrapeJob.objects.get(pk=pk, profile__user=request.user)
     except ScrapeJob.DoesNotExist:
         return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -197,9 +199,10 @@ def post_list_create(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
 def post_detail(request, pk):
     try:
-        item = Post.objects.get(pk=pk)
+        item = Post.objects.get(pk=pk, profile__user=request.user)
     except Post.DoesNotExist:
         return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -221,9 +224,10 @@ def post_detail(request, pk):
 # 6. PLATFORM META VIEWS
 # ==========================================================
 @api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
 def platform_meta_list_create(request):
     if request.method == 'GET':
-        items = PlatformMeta.objects.all()
+        items = PlatformMeta.objects.filter(post__profile__user=request.user)
         serializer = PlatformMetaSerializer(items, many=True)
         return Response(serializer.data)
     elif request.method == 'POST':
@@ -234,9 +238,10 @@ def platform_meta_list_create(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
 def platform_meta_detail(request, pk):
     try:
-        item = PlatformMeta.objects.get(pk=pk)
+        item = PlatformMeta.objects.get(pk=pk, post__profile__user=request.user)
     except PlatformMeta.DoesNotExist:
         return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -258,9 +263,10 @@ def platform_meta_detail(request, pk):
 # 7. ANALYSIS BATCH VIEWS
 # ==========================================================
 @api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
 def analysis_batch_list_create(request):
     if request.method == 'GET':
-        items = AnalysisBatch.objects.all()
+        items = AnalysisBatch.objects.filter(user=request.user)
         serializer = AnalysisBatchSerializer(items, many=True)
         return Response(serializer.data)
     elif request.method == 'POST':
@@ -271,9 +277,10 @@ def analysis_batch_list_create(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
 def analysis_batch_detail(request, pk):
     try:
-        item = AnalysisBatch.objects.get(pk=pk)
+        item = AnalysisBatch.objects.get(pk=pk, user=request.user)
     except AnalysisBatch.DoesNotExist:
         return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -332,9 +339,10 @@ def ai_model_detail(request, pk):
 # 9. SENTIMENT RESULT VIEWS
 # ==========================================================
 @api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
 def sentiment_result_list_create(request):
     if request.method == 'GET':
-        items = SentimentResult.objects.all()
+        items = SentimentResult.objects.filter(post__profile__user=request.user)
         serializer = SentimentResultSerializer(items, many=True)
         return Response(serializer.data)
     elif request.method == 'POST':
@@ -345,9 +353,10 @@ def sentiment_result_list_create(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
 def sentiment_result_detail(request, pk):
     try:
-        item = SentimentResult.objects.get(pk=pk)
+        item = SentimentResult.objects.get(pk=pk, post__profile__user=request.user)
     except SentimentResult.DoesNotExist:
         return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -369,9 +378,10 @@ def sentiment_result_detail(request, pk):
 # 10. TOPIC TAG VIEWS
 # ==========================================================
 @api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
 def topic_tag_list_create(request):
     if request.method == 'GET':
-        items = TopicTag.objects.all()
+        items = TopicTag.objects.filter(result__post__profile__user=request.user)
         serializer = TopicTagSerializer(items, many=True)
         return Response(serializer.data)
     elif request.method == 'POST':
@@ -382,9 +392,10 @@ def topic_tag_list_create(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
 def topic_tag_detail(request, pk):
     try:
-        item = TopicTag.objects.get(pk=pk)
+        item = TopicTag.objects.get(pk=pk, result__post__profile__user=request.user)
     except TopicTag.DoesNotExist:
         return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -406,9 +417,10 @@ def topic_tag_detail(request, pk):
 # 11. REPORT VIEWS
 # ==========================================================
 @api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
 def report_list_create(request):
     if request.method == 'GET':
-        items = Report.objects.all()
+        items = Report.objects.filter(user=request.user)
         serializer = ReportSerializer(items, many=True)
         return Response(serializer.data)
     elif request.method == 'POST':
@@ -419,9 +431,10 @@ def report_list_create(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
 def report_detail(request, pk):
     try:
-        item = Report.objects.get(pk=pk)
+        item = Report.objects.get(pk=pk, user=request.user)
     except Report.DoesNotExist:
         return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -443,9 +456,10 @@ def report_detail(request, pk):
 # 12. NOTIFICATION VIEWS
 # ==========================================================
 @api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
 def notification_list_create(request):
     if request.method == 'GET':
-        items = Notification.objects.all()
+        items = Notification.objects.filter(user=request.user)
         serializer = NotificationSerializer(items, many=True)
         return Response(serializer.data)
     elif request.method == 'POST':
@@ -456,9 +470,10 @@ def notification_list_create(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
 def notification_detail(request, pk):
     try:
-        item = Notification.objects.get(pk=pk)
+        item = Notification.objects.get(pk=pk, user=request.user)
     except Notification.DoesNotExist:
         return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
 
