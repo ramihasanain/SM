@@ -158,8 +158,8 @@ SIMPLE_JWT = {
 import os
 FACEBOOK_CLIENT_ID = os.environ.get('FACEBOOK_CLIENT_ID', '2021030568534896')
 FACEBOOK_CLIENT_SECRET = os.environ.get('FACEBOOK_CLIENT_SECRET', '362db6f64a46e81f5a24456614e9e192')
-FACEBOOK_REDIRECT_URI = os.environ.get('FACEBOOK_REDIRECT_URI', 'http://localhost:5173/oauth/facebook/callback')
+FACEBOOK_REDIRECT_URI = os.environ.get('FACEBOOK_REDIRECT_URI', 'https://analytica-xi.vercel.app/oauth/facebook/callback')
 
 X_CLIENT_ID = os.environ.get('X_CLIENT_ID', '')
 X_CLIENT_SECRET = os.environ.get('X_CLIENT_SECRET', '')
-X_REDIRECT_URI = os.environ.get('X_REDIRECT_URI', 'http://localhost:5173/oauth/x/callback')
+X_REDIRECT_URI = os.environ.get('X_REDIRECT_URI', 'https://analytica-xi.vercel.app/oauth/x/callback')
