@@ -16,11 +16,18 @@ from .serializers import (
 
 # ==========================================================
 # 1. USER VIEWS
-@api_view(['GET'])
+@api_view(['GET', 'PUT', 'PATCH'])
 @permission_classes([IsAuthenticated])
 def user_me(request):
-    serializer = CustomUserSerializer(request.user)
-    return Response(serializer.data)
+    if request.method == 'GET':
+        serializer = CustomUserSerializer(request.user)
+        return Response(serializer.data)
+    elif request.method in ['PUT', 'PATCH']:
+        serializer = CustomUserSerializer(request.user, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'POST'])
 @permission_classes([AllowAny])
