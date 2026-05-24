@@ -70,7 +70,30 @@ admin.site.register(ScrapeJob)
 admin.site.register(PlatformMeta)
 admin.site.register(AnalysisBatch)
 admin.site.register(AIModel)
-admin.site.register(SentimentResult)
-admin.site.register(TopicTag)
+class SentimentResultAdmin(admin.ModelAdmin):
+    list_display = ('id', 'post_snippet', 'label', 'engine_used', 'is_sarcastic', 'confidence_score_pct', 'analyzed_at')
+    list_filter = ('label', 'is_sarcastic', 'engine_used')
+    search_fields = ('post__content', 'sarcasm_explanation')
+    readonly_fields = ('analyzed_at',)
+    
+    def post_snippet(self, obj):
+        return obj.post.content[:50] + '...' if (obj.post and obj.post.content) else 'لا يوجد نص'
+    post_snippet.short_description = 'النص الأصلي (منشور/تعليق)'
+    
+    def confidence_score_pct(self, obj):
+        return f"{int(obj.confidence_score * 100)}%" if obj.confidence_score else "0%"
+    confidence_score_pct.short_description = 'درجة الثقة'
+
+class TopicTagAdmin(admin.ModelAdmin):
+    list_display = ('id', 'result_snippet', 'topic_label', 'confidence')
+    list_filter = ('topic_label',)
+    search_fields = ('result__post__content', 'topic_label')
+    
+    def result_snippet(self, obj):
+        return obj.result.post.content[:50] + '...' if (obj.result and obj.result.post and obj.result.post.content) else ''
+    result_snippet.short_description = 'تحليل النص'
+
+admin.site.register(SentimentResult, SentimentResultAdmin)
+admin.site.register(TopicTag, TopicTagAdmin)
 admin.site.register(Report)
 admin.site.register(Notification)

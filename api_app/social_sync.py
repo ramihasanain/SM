@@ -125,3 +125,68 @@ def fetch_facebook_posts(profile_id):
         print(f"Sync failed: {str(e)}")
         job.status = 'failed'
         job.save()
+
+from tweety import Twitter
+from django.conf import settings
+
+def fetch_x_posts(profile_id):
+    try:
+        profile = SocialProfile.objects.get(id=profile_id, platform='twitter')
+    except SocialProfile.DoesNotExist:
+        print("Profile not found")
+        return
+
+    job = ScrapeJob.objects.create(
+        profile=profile,
+        status='running',
+        started_at=timezone.now(),
+        records_fetched=0
+    )
+
+    try:
+        # Extract username from URL or use account_name
+        username = profile.url.split('/')[-1] if profile.url else profile.account_name
+        print(f"Fetching X posts for {username}...")
+
+        app = Twitter("session")
+        if settings.X_DUMMY_USERNAME and settings.X_DUMMY_PASSWORD:
+            try:
+                app.sign_in(settings.X_DUMMY_USERNAME, settings.X_DUMMY_PASSWORD)
+            except:
+                pass
+        
+        # Get tweets (1 page for quick sync)
+        tweets = app.get_tweets(username, pages=1)
+        records_fetched = 0
+
+        for tweet in tweets:
+            if not tweet.text:
+                continue
+            
+            parent_post, _ = Post.objects.update_or_create(
+                raw_json={'x_id': str(tweet.id)},
+                defaults={
+                    'profile': profile,
+                    'job': job,
+                    'content': tweet.text,
+                    'media_type': 'post',
+                    'author_name': tweet.author.name if hasattr(tweet, 'author') and tweet.author else username,
+                    'posted_at': tweet.date,
+                    'engagement_json': {
+                        'likes': getattr(tweet, 'likes', 0),
+                        'comments': getattr(tweet, 'replies', getattr(tweet, 'reply_counts', 0)),
+                        'shares': getattr(tweet, 'retweets', getattr(tweet, 'retweet_counts', 0))
+                    }
+                }
+            )
+            records_fetched += 1
+
+        job.records_fetched = records_fetched
+        job.status = 'completed'
+        job.save()
+        print(f"Successfully fetched {records_fetched} posts from X.")
+
+    except Exception as e:
+        print(f"X Sync failed: {str(e)}")
+        job.status = 'failed'
+        job.save()

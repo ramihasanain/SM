@@ -86,7 +86,7 @@ import dj_database_url
 DATABASES = {
     'default': dj_database_url.config(
         default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
-        conn_max_age=600,
+        conn_max_age=0,
         conn_health_checks=True,
     )
 }
@@ -163,3 +163,7 @@ FACEBOOK_REDIRECT_URI = os.environ.get('FACEBOOK_REDIRECT_URI', 'https://analyti
 X_CLIENT_ID = os.environ.get('X_CLIENT_ID', '')
 X_CLIENT_SECRET = os.environ.get('X_CLIENT_SECRET', '')
 X_REDIRECT_URI = os.environ.get('X_REDIRECT_URI', 'https://analytica-xi.vercel.app/oauth/x/callback')
+
+# Unofficial X Scraping (tweety-ns)
+X_DUMMY_USERNAME = os.environ.get('X_DUMMY_USERNAME', '')
+X_DUMMY_PASSWORD = os.environ.get('X_DUMMY_PASSWORD', '')

@@ -114,7 +114,7 @@ class AIModel(models.Model):
 
 class SentimentResult(models.Model):
     post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='sentiments')
-    model = models.ForeignKey(AIModel, on_delete=models.CASCADE, related_name='sentiments')
+    model = models.ForeignKey(AIModel, on_delete=models.CASCADE, related_name='sentiments', null=True, blank=True)
     batch = models.ForeignKey(AnalysisBatch, on_delete=models.SET_NULL, null=True, blank=True, related_name='sentiments')
     label = models.CharField(max_length=50) # pos, neg, neu
     pos_score = models.FloatField(null=True, blank=True)
@@ -122,6 +122,12 @@ class SentimentResult(models.Model):
     neu_score = models.FloatField(null=True, blank=True)
     lang_processed = models.CharField(max_length=10, null=True, blank=True)
     analyzed_at = models.DateTimeField(auto_now_add=True)
+    
+    # New Fields for Sarcasm and Hybrid Engine
+    is_sarcastic = models.BooleanField(default=False)
+    sarcasm_explanation = models.TextField(null=True, blank=True)
+    engine_used = models.CharField(max_length=100, default='Local Lexicon')
+    confidence_score = models.FloatField(default=1.0)
 
 
 class TopicTag(models.Model):

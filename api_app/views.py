@@ -13,6 +13,8 @@ from .serializers import (
     CustomUserSerializer, SocialProfileSerializer, PaymentTxnSerializer, ScrapeJobSerializer, PostSerializer,
     PlatformMetaSerializer, AnalysisBatchSerializer, AIModelSerializer, SentimentResultSerializer, TopicTagSerializer, ReportSerializer, NotificationSerializer
 )
+from django.conf import settings
+from tweety import Twitter
 
 # ==========================================================
 # 1. USER VIEWS
@@ -104,6 +106,41 @@ def profile_detail(request, pk):
         item.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def add_x_profile(request):
+    username = request.data.get('username')
+    if not username:
+        return Response({'error': 'Username is required'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    username = username.replace('@', '').strip()
+
+    try:
+        app = Twitter("session")
+        if settings.X_DUMMY_USERNAME and settings.X_DUMMY_PASSWORD:
+            try:
+                app.sign_in(settings.X_DUMMY_USERNAME, settings.X_DUMMY_PASSWORD)
+            except:
+                pass
+
+        user_info = app.get_user_info(username)
+        
+        profile, created = SocialProfile.objects.update_or_create(
+            user=request.user,
+            platform='twitter',
+            platform_account_id=getattr(user_info, 'rest_id', getattr(user_info, 'id', username)),
+            defaults={
+                'account_name': getattr(user_info, 'name', username),
+                'url': f"https://x.com/{username}",
+                'profile_picture_url': getattr(user_info, 'profile_image_url_https', ''),
+                'followers_count': getattr(user_info, 'followers_count', 0),
+            }
+        )
+        
+        from .serializers import SocialProfileSerializer
+        return Response({'message': 'X profile added successfully', 'profile': SocialProfileSerializer(profile).data})
+    except Exception as e:
+        return Response({'error': f'Failed to fetch X profile: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # ==========================================================
 # 3. PAYMENT TXN VIEWS
@@ -188,11 +225,44 @@ def scrape_job_detail(request, pk):
 # ==========================================================
 # 5. POST VIEWS
 # ==========================================================
+import threading
+
+def trigger_background_analysis(posts_qs):
+    # Only select posts that do not have any SentimentResult yet
+    pending_posts = posts_qs.filter(sentiments__isnull=True)
+    if not pending_posts.exists():
+        return
+        
+    post_ids = list(pending_posts.values_list('id', flat=True))
+    
+    def bg_task():
+        from django.db import connection
+        connection.close() # Prevent database session locking
+        
+        from .models import Post
+        from .sentiment_engine import bulk_analyze_posts
+        
+        thread_posts = Post.objects.filter(id__in=post_ids)
+        try:
+            bulk_analyze_posts(thread_posts)
+        except Exception as e:
+            print(f"Background analysis failed: {e}")
+            
+    thread = threading.Thread(target=bg_task)
+    thread.daemon = True
+    thread.start()
+
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def post_list_create(request):
     if request.method == 'GET':
-        items = Post.objects.filter(profile__user=request.user)
+        items = Post.objects.filter(profile__user=request.user)\
+            .select_related('profile')\
+            .prefetch_related('sentiments', 'sentiments__tags')
+            
+        # Automatically trigger background analysis for any pending posts
+        trigger_background_analysis(items)
+        
         profile_id = request.query_params.get('profile_id')
         if profile_id:
             items = items.filter(profile_id=profile_id)
@@ -536,22 +606,31 @@ def dashboard_stats(request):
     
     # Dynamic Timeline based on actual data dates (Last 30 days of available data)
     from django.db.models.functions import TruncDate
+    from django.db.models import Q
     
-    daily_posts = total_posts_qs.annotate(date=TruncDate('posted_at')).values('date').annotate(count=Count('id')).order_by('-date')[:30]
-    daily_comments = total_comments_qs.annotate(date=TruncDate('posted_at')).values('date').annotate(count=Count('id'))
-    
-    comments_dict = {str(item['date']): item['count'] for item in daily_comments if item['date']}
+    daily_sentiments = SentimentResult.objects.filter(post__profile__user=request.user)\
+        .annotate(date=TruncDate('post__posted_at'))\
+        .values('date')\
+        .annotate(
+            pos=Count('id', filter=Q(label='إيجابي')),
+            neg=Count('id', filter=Q(label='سلبي')),
+            neu=Count('id', filter=Q(label='محايد')),
+            total=Count('id')
+        ).order_by('-date')[:30]
     
     timeline = []
-    # Reverse to show chronological order (oldest to newest among the last 30 active days)
-    for idx, item in enumerate(reversed(daily_posts)):
+    # Reverse to show oldest to newest among the last 30 active days
+    for idx, item in enumerate(reversed(daily_sentiments)):
         if not item['date']: continue
         date_str = str(item['date'])
         timeline.append({
             'day': idx + 1,
             'date': date_str,
-            'posts': item['count'],
-            'comments': comments_dict.get(date_str, 0),
+            'pos': item['pos'],
+            'neg': item['neg'],
+            'neu': item['neu'],
+            'posts': item['total'],
+            'comments': 0
         })
         
     if not timeline:
@@ -562,8 +641,11 @@ def dashboard_stats(request):
             timeline.append({
                 'day': i + 1,
                 'date': day.strftime('%Y-%m-%d'),
+                'pos': 0,
+                'neg': 0,
+                'neu': 0,
                 'posts': 0,
-                'comments': 0,
+                'comments': 0
             })
         
     return Response({
@@ -587,7 +669,7 @@ def dashboard_stats(request):
         'timeline': timeline
     })
 
-from .social_sync import fetch_facebook_posts
+from .social_sync import fetch_facebook_posts, fetch_x_posts
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -601,6 +683,24 @@ def sync_profile(request, pk):
         try:
             fetch_facebook_posts(profile.id)
             profile.refresh_from_db()
+            
+            # Asynchronous automatic sentiment analysis trigger after sync
+            un_analyzed = Post.objects.filter(profile=profile, sentiments__isnull=True)
+            trigger_background_analysis(un_analyzed)
+            
+            from .serializers import SocialProfileSerializer
+            return Response({'message': 'Synced successfully', 'profile': SocialProfileSerializer(profile).data})
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    elif profile.platform == 'twitter':
+        try:
+            fetch_x_posts(profile.id)
+            profile.refresh_from_db()
+            
+            # Asynchronous automatic sentiment analysis trigger after sync
+            un_analyzed = Post.objects.filter(profile=profile, sentiments__isnull=True)
+            trigger_background_analysis(un_analyzed)
+            
             from .serializers import SocialProfileSerializer
             return Response({'message': 'Synced successfully', 'profile': SocialProfileSerializer(profile).data})
         except Exception as e:
@@ -608,11 +708,56 @@ def sync_profile(request, pk):
     else:
         return Response({'error': 'Sync not implemented for this platform'}, status=status.HTTP_400_BAD_REQUEST)
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def analyze_pending_posts(request):
+    """
+    يقوم بتحليل المشاعر لجميع المنشورات المعلقة التي لم يتم تحليلها بعد للمستخدم الحالي.
+    """
+    from .sentiment_engine import bulk_analyze_posts
+    from .models import AnalysisBatch
+    
+    # Get all un-analyzed posts for this user
+    pending_posts = Post.objects.filter(profile__user=request.user, sentiments__isnull=True)
+    count = pending_posts.count()
+    
+    if count == 0:
+        return Response({
+            'message': 'لا توجد منشورات معلقة بحاجة للتحليل.',
+            'analyzed_count': 0
+        })
+        
+    # Create Analysis Batch record
+    batch = AnalysisBatch.objects.create(
+        user=request.user,
+        trigger_type='manual',
+        status='running',
+        posts_analyzed=0
+    )
+    
+    try:
+        analyzed_count = bulk_analyze_posts(pending_posts, batch=batch)
+        batch.posts_analyzed = analyzed_count
+        batch.status = 'completed'
+        batch.save()
+        
+        return Response({
+            'message': f'تم تحليل {analyzed_count} منشوراً بنجاح باستخدام المعمارية الهجينة!',
+            'analyzed_count': analyzed_count,
+            'batch_id': batch.id
+        })
+    except Exception as e:
+        batch.status = 'failed'
+        batch.save()
+        return Response({
+            'error': f'فشل في تحليل المنشورات: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def post_details(request, pk):
     try:
-        post = Post.objects.get(pk=pk)
+        post = Post.objects.prefetch_related('sentiments', 'sentiments__tags').get(pk=pk)
     except Post.DoesNotExist:
         return Response({'error': 'Post not found'}, status=status.HTTP_404_NOT_FOUND)
         
@@ -623,7 +768,9 @@ def post_details(request, pk):
     reactions = Reaction.objects.filter(post=post)
     reactions_list = [{'id': r.id, 'author_name': r.author_name, 'reaction_type': r.reaction_type} for r in reactions]
     
-    comments = Post.objects.filter(parent_post=post, media_type='comment')
+    comments = Post.objects.filter(parent_post=post, media_type='comment')\
+        .select_related('profile')\
+        .prefetch_related('sentiments', 'sentiments__tags')
     comments_list = []
     for c in comments:
         c_data = PostSerializer(c).data
@@ -633,7 +780,12 @@ def post_details(request, pk):
             'author_name': c.author_name,
             'sentiment': c_data.get('sentiment', 'محايد'),
             'score': c_data.get('score', 0.5),
-            'topic': c_data.get('topic', 'غير محدد')
+            'topic': c_data.get('topic', 'غير حدد'),
+            # Include new sarcasm and engine details in nested views
+            'is_sarcastic': c_data.get('is_sarcastic', False),
+            'sarcasm_explanation': c_data.get('sarcasm_explanation', ''),
+            'engine_used': c_data.get('engine_used', 'Local Lexicon'),
+            'is_analyzed': c_data.get('is_analyzed', False)
         })
         
     return Response({
@@ -641,3 +793,21 @@ def post_details(request, pk):
         'reactions': reactions_list,
         'comments': comments_list
     })
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def active_topics(request):
+    """
+    يجلب جميع المواضيع التصنيفية الفريدة الموجودة في قاعدة البيانات للمستخدم الحالي.
+    """
+    labels = TopicTag.objects.filter(
+        result__post__profile__user=request.user
+    ).values_list('topic_label', flat=True).distinct()
+    
+    labels = [l for l in labels if l and l.strip()]
+    
+    # المواضيع الافتراضية لضمان عدم خلو القائمة في البداية
+    default_topics = ['خدمة العملاء', 'جودة المنتج', 'التشكيلة الجديدة', 'العروض', 'سياسة الإرجاع', 'مشاكل تقنية']
+    
+    combined = list(set(list(labels) + default_topics))
+    return Response(sorted(combined))

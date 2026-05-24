@@ -10,6 +10,7 @@ urlpatterns = [
     
     # 2. Social Profile
     path('profiles/', views.profile_list_create, name='profile-list'),
+    path('profiles/add-x/', views.add_x_profile, name='add-x-profile'),
     path('profiles/<int:pk>/', views.profile_detail, name='profile-detail'),
 
     # 3. Payment Txn
@@ -22,8 +23,10 @@ urlpatterns = [
 
     # 5. Post
     path('posts/', views.post_list_create, name='post-list'),
+    path('posts/analyze/', views.analyze_pending_posts, name='posts-analyze'),
     path('posts/<int:pk>/', views.post_detail, name='post-detail'),
     path('posts/<int:pk>/details/', views.post_details, name='post-details'),
+    path('posts/topics/', views.active_topics, name='active-topics'),
 
     # 6. Platform Meta
     path('platform-metas/', views.platform_meta_list_create, name='platform-meta-list'),
