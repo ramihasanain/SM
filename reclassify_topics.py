@@ -36,6 +36,10 @@ def reclassify():
                 ai_topic = ai_res.get("topic", "عام")
                 sent_res = post.sentiments.first()
                 if sent_res:
+                    # Update engine_used to mark it as analyzed by Gemini Topic modeling, preventing any re-sending!
+                    sent_res.engine_used = "Gemini 2.0 Flash (Batch Topic)"
+                    sent_res.save()
+                    
                     tag = sent_res.tags.first()
                     if tag:
                         tag.topic_label = ai_topic

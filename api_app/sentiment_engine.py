@@ -1331,11 +1331,15 @@ def bulk_analyze_posts(posts_qs, batch=None):
                         # Find the TopicTag for this post's sentiment result
                         sent_res = post.sentiments.first()
                         if sent_res:
+                            # Update engine_used to mark it as analyzed by Gemini Topic modeling, preventing any re-sending!
+                            sent_res.engine_used = "Gemini 2.0 Flash (Batch Topic)"
+                            sent_res.save()
+                            
                             tag = sent_res.tags.first()
                             if tag:
                                 tag.topic_label = ai_topic
                                 tag.save()
-                                print(f"   [Batch AI Update] Updated Post ID {post.id} topic to '{ai_topic}'")
+                                print(f"   [Batch AI Update] Updated Post ID {post.id} topic to '{ai_topic}' and engine to 'Gemini 2.0 Flash (Batch Topic)'")
             except Exception as e:
                 print(f"Error during batch AI topic modeling update: {e}")
 
