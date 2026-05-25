@@ -1314,8 +1314,14 @@ def bulk_analyze_posts(posts_qs, batch=None):
             posts_data = [{"id": p.id, "content": p.content[:400]} for p in newly_analyzed_parents]
             try:
                 batch_results = batch_ai_topic_modeling(posts_data, api_key)
-                # Create a lookup map of id -> result
-                results_map = {item["id"]: item for item in batch_results if "id" in item}
+                # Create a lookup map of id -> result (handling string/int keys)
+                results_map = {}
+                for item in batch_results:
+                    if "id" in item:
+                        try:
+                            results_map[int(item["id"])] = item
+                        except (ValueError, TypeError):
+                            results_map[item["id"]] = item
                 
                 # Update the TopicTags in the database
                 for post in newly_analyzed_parents:

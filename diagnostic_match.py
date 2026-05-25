@@ -1,19 +1,14 @@
 import os
-from api_app.sentiment_engine import clean_arabic_text, load_external_keywords, POS_FILE, NEG_FILE
+import django
 
-def test_match():
-    text = "اللابتوب شغال دفّاية بالصيف! 🔥"
-    cleaned = clean_arabic_text(text).lower()
-    
-    ext_pos = load_external_keywords(POS_FILE)
-    ext_neg = load_external_keywords(NEG_FILE)
-    
-    matched_pos = [word for word in ext_pos if word in cleaned]
-    matched_neg = [word for word in ext_neg if word in cleaned]
-    
-    print("Cleaned text:", cleaned)
-    print("Matched positive keywords in lexicon:", matched_pos)
-    print("Matched negative keywords in lexicon:", matched_neg)
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
+django.setup()
 
-if __name__ == '__main__':
-    test_match()
+from api_app.models import Post, SentimentResult, TopicTag
+
+posts = Post.objects.filter(media_type='post')
+print(f"Total parent posts: {posts.count()}")
+for p in posts:
+    sent = p.sentiments.first()
+    tag = sent.tags.first() if sent else None
+    print(f"Post ID: {p.id} | Content snippet: '{p.content[:30]}' | Sentiment: {sent.label if sent else 'None'} | Engine: {sent.engine_used if sent else 'None'} | Topic: {tag.topic_label if tag else 'None'}")

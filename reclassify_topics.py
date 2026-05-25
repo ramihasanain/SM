@@ -21,7 +21,13 @@ def reclassify():
     
     try:
         batch_results = batch_ai_topic_modeling(posts_data, api_key)
-        results_map = {item["id"]: item for item in batch_results if "id" in item}
+        results_map = {}
+        for item in batch_results:
+            if "id" in item:
+                try:
+                    results_map[int(item["id"])] = item
+                except (ValueError, TypeError):
+                    results_map[item["id"]] = item
         
         updated_count = 0
         for post in posts:
