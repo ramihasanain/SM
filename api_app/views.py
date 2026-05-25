@@ -5,14 +5,29 @@ from rest_framework import status
 from django.db.models import Count
 from django.utils import timezone
 from datetime import timedelta
-from .models import (
-    CustomUser, SocialProfile, PaymentTxn, ScrapeJob, Post,
-    PlatformMeta, AnalysisBatch, AIModel, SentimentResult, TopicTag, Report, Notification
-)
-from .serializers import (
-    CustomUserSerializer, SocialProfileSerializer, PaymentTxnSerializer, ScrapeJobSerializer, PostSerializer,
-    PlatformMetaSerializer, AnalysisBatchSerializer, AIModelSerializer, SentimentResultSerializer, TopicTagSerializer, ReportSerializer, NotificationSerializer
-)
+
+try:
+    from .models import (
+        CustomUser, SocialProfile, PaymentTxn, ScrapeJob, Post, Reaction,
+        PlatformMeta, AnalysisBatch, AIModel, SentimentResult, TopicTag, Report, Notification
+    )
+except ImportError:
+    from api_app.models import (
+        CustomUser, SocialProfile, PaymentTxn, ScrapeJob, Post, Reaction,
+        PlatformMeta, AnalysisBatch, AIModel, SentimentResult, TopicTag, Report, Notification
+    )
+
+try:
+    from .serializers import (
+        CustomUserSerializer, SocialProfileSerializer, PaymentTxnSerializer, ScrapeJobSerializer, PostSerializer,
+        PlatformMetaSerializer, AnalysisBatchSerializer, AIModelSerializer, SentimentResultSerializer, TopicTagSerializer, ReportSerializer, NotificationSerializer
+    )
+except ImportError:
+    from api_app.serializers import (
+        CustomUserSerializer, SocialProfileSerializer, PaymentTxnSerializer, ScrapeJobSerializer, PostSerializer,
+        PlatformMetaSerializer, AnalysisBatchSerializer, AIModelSerializer, SentimentResultSerializer, TopicTagSerializer, ReportSerializer, NotificationSerializer
+    )
+
 from django.conf import settings
 from tweety import Twitter
 
@@ -136,8 +151,6 @@ def add_x_profile(request):
                 'followers_count': getattr(user_info, 'followers_count', 0),
             }
         )
-        
-        from .serializers import SocialProfileSerializer
         return Response({'message': 'X profile added successfully', 'profile': SocialProfileSerializer(profile).data})
     except Exception as e:
         return Response({'error': f'Failed to fetch X profile: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -239,7 +252,6 @@ def trigger_background_analysis(posts_qs):
         from django.db import connection
         connection.close() # Prevent database session locking
         
-        from .models import Post
         from .sentiment_engine import bulk_analyze_posts
         
         thread_posts = Post.objects.filter(id__in=post_ids)
@@ -501,7 +513,9 @@ def report_list_create(request):
         serializer = ReportSerializer(items, many=True)
         return Response(serializer.data)
     elif request.method == 'POST':
-        serializer = ReportSerializer(data=request.data)
+        data = request.data.copy()
+        data['user'] = request.user.id
+        serializer = ReportSerializer(data=data)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -527,6 +541,69 @@ def report_detail(request, pk):
     elif request.method == 'DELETE':
         item.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def download_excel_report(request, pk):
+    from django.http import HttpResponse
+    import csv
+
+    try:
+        report = Report.objects.get(pk=pk, user=request.user)
+    except Report.DoesNotExist:
+        return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    # Fetch posts in the date range
+    posts = Post.objects.all()
+    if report.period_from:
+        posts = posts.filter(posted_at__date__gte=report.period_from)
+    if report.period_to:
+        posts = posts.filter(posted_at__date__lte=report.period_to)
+
+    # Set up HTTP response with UTF-8 BOM to ensure Excel opens Arabic correctly
+    response = HttpResponse(content_type='text/csv; charset=utf-8-sig')
+    response['Content-Disposition'] = f'attachment; filename="report_{report.id}.csv"'
+    
+    # Write UTF-8 BOM bytes so Excel automatically reads it as UTF-8
+    response.write(b'\xef\xbb\xbf')
+
+    writer = csv.writer(response)
+    # Write header
+    writer.writerow([
+        'معرف المنشور (ID)', 
+        'المحتوى (Content)', 
+        'تاريخ النشر (Posted At)', 
+        'المشاعر (Sentiment)', 
+        'الموضوع (Topic)', 
+        'المحرك المستخدم (Engine)', 
+        'هل يحتوي على سخرية؟ (Is Sarcastic)', 
+        'تفسير السخرية (Sarcasm Explanation)'
+    ])
+
+    for post in posts:
+        # Get first sentiment result
+        sentiment_res = post.sentiments.first()
+        sentiment_label = sentiment_res.label if sentiment_res else 'محايد'
+        engine = sentiment_res.engine_used if sentiment_res else 'Local Lexicon'
+        is_sarcastic = 'نعم' if (sentiment_res and sentiment_res.is_sarcastic) else 'لا'
+        sarcasm_explanation = sentiment_res.sarcasm_explanation if sentiment_res else ''
+        
+        # Get topic tag
+        topic_tag = sentiment_res.tags.first() if sentiment_res else None
+        topic = topic_tag.topic_label if topic_tag else 'غير محدد'
+
+        writer.writerow([
+            post.id,
+            post.content,
+            post.posted_at.strftime('%Y-%m-%d %H:%M:%S') if post.posted_at else '',
+            sentiment_label,
+            topic,
+            engine,
+            is_sarcastic,
+            sarcasm_explanation
+        ])
+
+    return response
 
 
 # ==========================================================
@@ -688,7 +765,6 @@ def sync_profile(request, pk):
             un_analyzed = Post.objects.filter(profile=profile, sentiments__isnull=True)
             trigger_background_analysis(un_analyzed)
             
-            from .serializers import SocialProfileSerializer
             return Response({'message': 'Synced successfully', 'profile': SocialProfileSerializer(profile).data})
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -701,7 +777,6 @@ def sync_profile(request, pk):
             un_analyzed = Post.objects.filter(profile=profile, sentiments__isnull=True)
             trigger_background_analysis(un_analyzed)
             
-            from .serializers import SocialProfileSerializer
             return Response({'message': 'Synced successfully', 'profile': SocialProfileSerializer(profile).data})
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -715,7 +790,6 @@ def analyze_pending_posts(request):
     يقوم بتحليل المشاعر لجميع المنشورات المعلقة التي لم يتم تحليلها بعد للمستخدم الحالي.
     """
     from .sentiment_engine import bulk_analyze_posts
-    from .models import AnalysisBatch
     
     # Get all un-analyzed posts for this user
     pending_posts = Post.objects.filter(profile__user=request.user, sentiments__isnull=True)
@@ -761,10 +835,8 @@ def post_details(request, pk):
     except Post.DoesNotExist:
         return Response({'error': 'Post not found'}, status=status.HTTP_404_NOT_FOUND)
         
-    from .serializers import PostSerializer
     post_data = PostSerializer(post).data
     
-    from .models import Reaction
     reactions = Reaction.objects.filter(post=post)
     reactions_list = [{'id': r.id, 'author_name': r.author_name, 'reaction_type': r.reaction_type} for r in reactions]
     
