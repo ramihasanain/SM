@@ -941,13 +941,10 @@ def analyze_complex_sentiment(text, local_sentiment, api_key):
 
 def batch_ai_topic_modeling(posts_data, api_key=None):
     if not HAS_GEMINI_SDK:
-        print("❌ [Batch AI Error] google.generativeai SDK is not installed!")
-        return []
+        raise Exception("حزمة google-generativeai غير مثبتة في بيئة تشغيل الخادم (Django Environment).")
     if not api_key:
-        print("❌ [Batch AI Error] Gemini API key is missing!")
-        return []
+        raise Exception("مفتاح API الخاص بـ Gemini (GEMINI_API_KEY) مفقود في بيئة تشغيل الخادم.")
     if not posts_data:
-        print("ℹ️ [Batch AI] No posts data provided for modeling.")
         return []
         
     print(f"🧠 [Batch AI] Sending {len(posts_data)} posts to Gemini for topic classification...")
@@ -978,6 +975,7 @@ def batch_ai_topic_modeling(posts_data, api_key=None):
     ]
     """
     
+    errors = []
     for name in model_names:
         try:
             print(f"   💬 [Batch AI] Trying model {name}...")
@@ -994,10 +992,12 @@ def batch_ai_topic_modeling(posts_data, api_key=None):
                 print(f"   🎉 [Batch AI] Successfully parsed {len(data)} classified topics!")
                 return data
         except Exception as e:
-            print(f"   ⚠️ [Batch AI] Model {name} failed: {e}")
+            err_msg = f"{name}: {str(e)}"
+            print(f"   ⚠️ [Batch AI] Model failed - {err_msg}")
+            errors.append(err_msg)
             continue
             
-    return []
+    raise Exception(f"فشلت جميع محاولات تصنيف المواضيع عبر Gemini. الأخطاء: {'; '.join(errors)}")
 
 
 def analyze_text_hybrid(text, parent_text=None, inherited_topic=None):
