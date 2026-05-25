@@ -1038,19 +1038,13 @@ def analyze_text_hybrid(text, parent_text=None, inherited_topic=None):
             else:
                 engine_used = "Local Lexicon (Custom Match)"
                 
-    # Step 3: Topic Modeling (AI-based for all comments to ensure maximum accuracy)
+    # Step 3: Topic Modeling (Inherit parent post's topic, fallback to local keyword rules)
     detected_topic = "عام"
     keywords = []
     
-    if api_key and HAS_GEMINI_SDK:
-        try:
-            ai_topic_res = get_ai_topic_modeling(cleaned, api_key)
-            detected_topic = ai_topic_res.get("topic", "عام")
-            keywords = ai_topic_res.get("keywords", [])
-        except Exception as e:
-            print(f"Error fetching AI topic modeling for comment: {e}")
-            
-    if detected_topic == "عام":
+    if inherited_topic:
+        detected_topic = inherited_topic
+    else:
         for topic, keywords_list in ARABIC_TOPIC_RULES.items():
             if any(kw in cleaned.lower() for kw in keywords_list):
                 detected_topic = topic
@@ -1169,7 +1163,29 @@ def bulk_analyze_posts(posts_qs, batch=None):
         is_parent_post = (post.parent_post is None) or (post.media_type in ['post', 'منشور'])
 
         if is_parent_post:
-            # Parent posts are always classified as Neutral (محايد)
+            # Parent posts are always classified as Neutral (محايد) for sentiment
+            # But we run AI topic modeling on them for maximum topic precision!
+            import os
+            api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("ai_key")
+            
+            detected_topic = "عام"
+            keywords = []
+            
+            if api_key and HAS_GEMINI_SDK:
+                try:
+                    ai_topic_res = get_ai_topic_modeling(post.content, api_key)
+                    detected_topic = ai_topic_res.get("topic", "عام")
+                    keywords = ai_topic_res.get("keywords", [])
+                except Exception as e:
+                    print(f"Error fetching AI topic modeling for parent post: {e}")
+            
+            # Fallback to local keyword rules
+            if detected_topic == "عام":
+                for topic, keywords_list in ARABIC_TOPIC_RULES.items():
+                    if any(kw in post.content.lower() for kw in keywords_list):
+                        detected_topic = topic
+                        break
+                        
             res = {
                 "sentiment": "محايد",
                 "pos_score": 0.0,
@@ -1179,7 +1195,8 @@ def bulk_analyze_posts(posts_qs, batch=None):
                 "sarcasm_explanation": "",
                 "engine_used": "System Rule",
                 "confidence": 1.0,
-                "topic": "عام"
+                "topic": detected_topic,
+                "keywords": keywords
             }
         else:
             res = analyze_text_hybrid(post.content, parent_text=parent_text, inherited_topic=inherited_topic)
