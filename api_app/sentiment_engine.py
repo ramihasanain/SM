@@ -1174,7 +1174,24 @@ def bulk_analyze_posts(posts_qs, batch=None):
 
         parent_text = post.parent_post.content if post.parent_post else None
 
-        res = analyze_text_hybrid(post.content, parent_text=parent_text, inherited_topic=inherited_topic)
+        # Check if this is a parent post (not a comment)
+        is_parent_post = (post.parent_post is None) or (post.media_type in ['post', 'منشور'])
+
+        if is_parent_post:
+            # Parent posts are always classified as Neutral (محايد)
+            res = {
+                "sentiment": "محايد",
+                "pos_score": 0.0,
+                "neg_score": 0.0,
+                "neu_score": 1.0,
+                "is_sarcastic": False,
+                "sarcasm_explanation": "",
+                "engine_used": "System Rule",
+                "confidence": 1.0,
+                "topic": "عام"
+            }
+        else:
+            res = analyze_text_hybrid(post.content, parent_text=parent_text, inherited_topic=inherited_topic)
 
         
 

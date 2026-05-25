@@ -660,7 +660,7 @@ def dashboard_stats(request):
     linked_accounts = SocialProfile.objects.filter(user=request.user).count()
     completed_scrapes = ScrapeJob.objects.filter(profile__user=request.user, status='completed').count()
     
-    sentiments = SentimentResult.objects.filter(post__profile__user=request.user)
+    sentiments = SentimentResult.objects.filter(post__profile__user=request.user, post__media_type='comment')
     total_sentiments = sentiments.count() or 1
     pos_count = sentiments.filter(label='إيجابي').count()
     neg_count = sentiments.filter(label='سلبي').count()
