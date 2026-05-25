@@ -1038,28 +1038,19 @@ def analyze_text_hybrid(text, parent_text=None, inherited_topic=None):
             else:
                 engine_used = "Local Lexicon (Custom Match)"
                 
-    # Step 3: Topic Modeling (Strictly AI-based for main posts, inherited for comments)
+    # Step 3: Topic Modeling (AI-based for all comments to ensure maximum accuracy)
     detected_topic = "عام"
     keywords = []
-    is_comment = parent_text is not None
     
-    if inherited_topic:
-        detected_topic = inherited_topic
-    elif not is_comment:
-        if api_key and HAS_GEMINI_SDK:
-            try:
-                ai_topic_res = get_ai_topic_modeling(cleaned, api_key)
-                detected_topic = ai_topic_res.get("topic", "عام")
-                keywords = ai_topic_res.get("keywords", [])
-            except Exception as e:
-                print(f"Error fetching AI topic modeling for post: {e}")
-                
-        if detected_topic == "عام":
-            for topic, keywords_list in ARABIC_TOPIC_RULES.items():
-                if any(kw in cleaned.lower() for kw in keywords_list):
-                    detected_topic = topic
-                    break
-    else:
+    if api_key and HAS_GEMINI_SDK:
+        try:
+            ai_topic_res = get_ai_topic_modeling(cleaned, api_key)
+            detected_topic = ai_topic_res.get("topic", "عام")
+            keywords = ai_topic_res.get("keywords", [])
+        except Exception as e:
+            print(f"Error fetching AI topic modeling for comment: {e}")
+            
+    if detected_topic == "عام":
         for topic, keywords_list in ARABIC_TOPIC_RULES.items():
             if any(kw in cleaned.lower() for kw in keywords_list):
                 detected_topic = topic
