@@ -889,3 +889,33 @@ def active_topics(request):
         unique_topics = ['عام']
         
     return Response(unique_topics)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def analysis_operations_log(request):
+    """
+    يعود بسجل تفصيلي لجميع عمليات التحليل ومحركات التصنيف المستخدمة للمنشورات والتعليقات.
+    """
+    posts = Post.objects.filter(profile__user=request.user)\
+        .select_related('profile')\
+        .prefetch_related('sentiments', 'sentiments__tags')\
+        .order_by('-posted_at')
+        
+    log_data = []
+    for p in posts:
+        sentiment = p.sentiments.first()
+        tag = sentiment.tags.first() if sentiment else None
+        
+        log_data.append({
+            'id': p.id,
+            'content': p.content[:150] if p.content else 'بدون محتوى',
+            'media_type': 'post' if p.media_type in ['post', 'منشور'] or p.parent_post is None else 'comment',
+            'sentiment': sentiment.label if sentiment else 'غير محلل',
+            'topic': tag.topic_label if tag else ('غير محدد' if p.media_type in ['post', 'منشور'] or p.parent_post is None else ''),
+            'engine_used': sentiment.engine_used if sentiment else 'غير معروف',
+            'confidence': sentiment.confidence_score if sentiment else 0.0,
+            'posted_at': p.posted_at.strftime('%Y-%m-%d %H:%M') if p.posted_at else 'غير محدد'
+        })
+        
+    return Response(log_data)

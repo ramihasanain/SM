@@ -940,9 +940,17 @@ def analyze_complex_sentiment(text, local_sentiment, api_key):
 
 
 def batch_ai_topic_modeling(posts_data, api_key=None):
-    if not HAS_GEMINI_SDK or not api_key or not posts_data:
+    if not HAS_GEMINI_SDK:
+        print("❌ [Batch AI Error] google.generativeai SDK is not installed!")
+        return []
+    if not api_key:
+        print("❌ [Batch AI Error] Gemini API key is missing!")
+        return []
+    if not posts_data:
+        print("ℹ️ [Batch AI] No posts data provided for modeling.")
         return []
         
+    print(f"🧠 [Batch AI] Sending {len(posts_data)} posts to Gemini for topic classification...")
     genai.configure(api_key=api_key)
     model_names = ['gemini-2.0-flash', 'gemini-1.5-flash']
     
@@ -972,8 +980,10 @@ def batch_ai_topic_modeling(posts_data, api_key=None):
     
     for name in model_names:
         try:
+            print(f"   💬 [Batch AI] Trying model {name}...")
             model = genai.GenerativeModel(name)
             response = model.generate_content(prompt)
+            print(f"   ✅ [Batch AI] Received response from {name}. Parsing JSON...")
             clean_txt = response.text.replace("```json", "").replace("```", "").strip()
             start_idx = clean_txt.find('[')
             end_idx = clean_txt.rfind(']')
@@ -981,9 +991,10 @@ def batch_ai_topic_modeling(posts_data, api_key=None):
                 clean_txt = clean_txt[start_idx:end_idx+1]
             data = json.loads(clean_txt)
             if isinstance(data, list):
+                print(f"   🎉 [Batch AI] Successfully parsed {len(data)} classified topics!")
                 return data
         except Exception as e:
-            print(f"Failed batch topic modeling with {name}: {e}")
+            print(f"   ⚠️ [Batch AI] Model {name} failed: {e}")
             continue
             
     return []
