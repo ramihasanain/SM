@@ -28,6 +28,7 @@ urlpatterns = [
     path('posts/<int:pk>/details/', views.post_details, name='post-details'),
     path('posts/topics/', views.active_topics, name='active-topics'),
     path('posts/operations-log/', views.analysis_operations_log, name='analysis-operations-log'),
+    path('posts/batch-ai-topics/', views.run_batch_ai_topics, name='run-batch-ai-topics'),
 
     # 6. Platform Meta
     path('platform-metas/', views.platform_meta_list_create, name='platform-meta-list'),

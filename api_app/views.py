@@ -919,3 +919,65 @@ def analysis_operations_log(request):
         })
         
     return Response(log_data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def run_batch_ai_topics(request):
+    """
+    يقوم بتشغيل ذكاء Gemini الاصطناعي المجمع لتصنيف مواضيع المنشورات الأصلية التي لم تُصنف بالذكاء الاصطناعي بعد.
+    يضمن حظر إرسال أي منشور للـ AI مرتين بشكل قاطع.
+    """
+    from .sentiment_engine import batch_ai_topic_modeling
+    import os
+    
+    api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("ai_key")
+    if not api_key:
+        return Response({'error': 'Gemini API key is missing'}, status=400)
+        
+    # Exclude posts where sentiment engine_used contains 'Gemini' or 'Batch'
+    posts = Post.objects.filter(
+        profile__user=request.user,
+        media_type='post'
+    ).exclude(
+        sentiments__engine_used__icontains='Gemini'
+    ).exclude(
+        sentiments__engine_used__icontains='Batch'
+    )
+    
+    count = posts.count()
+    if count == 0:
+        return Response({
+            'message': 'جميع المنشورات مصنفة بالذكاء الاصطناعي بالفعل ولا توجد بوستات جديدة بحاجة للإرسال.',
+            'updated_count': 0
+        })
+        
+    posts_data = [{"id": p.id, "content": p.content[:400]} for p in posts]
+    
+    try:
+        batch_results = batch_ai_topic_modeling(posts_data, api_key)
+        results_map = {item["id"]: item for item in batch_results if "id" in item}
+        
+        updated_count = 0
+        for post in posts:
+            ai_res = results_map.get(post.id)
+            if ai_res:
+                ai_topic = ai_res.get("topic", "عام")
+                sent_res = post.sentiments.first()
+                if sent_res:
+                    # Update engine_used to mark it as analyzed by Gemini Topic modeling, preventing any re-sending!
+                    sent_res.engine_used = "Gemini 2.0 Flash (Batch Topic)"
+                    sent_res.save()
+                    
+                    tag = sent_res.tags.first()
+                    if tag:
+                        tag.topic_label = ai_topic
+                        tag.save()
+                        updated_count += 1
+                        
+        return Response({
+            'message': f'تم استخراج وتصنيف مواضيع {updated_count} منشوراً بنجاح عبر الذكاء الاصطناعي المجمع!',
+            'updated_count': updated_count
+        })
+    except Exception as e:
+        return Response({'error': f'فشل تصنيف المواضيع مجمعاً: {str(e)}'}, status=500)
