@@ -939,7 +939,54 @@ def analyze_complex_sentiment(text, local_sentiment, api_key):
     return {"topic": "عام", "keywords": []}
 
 
-
+def batch_ai_topic_modeling(posts_data, api_key=None):
+    if not HAS_GEMINI_SDK or not api_key or not posts_data:
+        return []
+        
+    genai.configure(api_key=api_key)
+    model_names = ['gemini-2.0-flash', 'gemini-1.5-flash']
+    
+    input_json = json.dumps(posts_data, ensure_ascii=False, indent=2)
+    
+    prompt = f"""
+    أنت خبير تصنيف موضوعات وتحليل نصوص باللغة العربية.
+    لديك قائمة من المنشورات بصيغة JSON تحتوي على المعرف (id) والمحتوى (content).
+    المطلوب: قم بتحليل محتوى كل منشور بدقة، واستخراج الموضوع الأساسي (topic) وأهم 3 كلمات مفتاحية (keywords).
+    
+    شروط تصنيف الموضوع الأساسي (topic):
+    - اختر اسماً دقيقاً وموجزاً جداً للموضوع بكلمة أو اثنتين فقط (مثال: خدمة عملاء، جودة منتج، سرعة توصيل، أسعار وعروض، إعلانات، قضايا فنية، مقاطعة، دعم انتخابي، إلخ).
+    
+    المدخلات:
+    {input_json}
+    
+    المخرجات المطلوبة:
+    أعد النتيجة كـ JSON Array صالح فقط دون أي علامات Markdown أو نصوص إضافية، بالصيغة التالية تماماً:
+    [
+      {{
+        "id": 123,
+        "topic": "اسم الموضوع",
+        "keywords": ["كلمة1", "كلمة2", "كلمة3"]
+      }}
+    ]
+    """
+    
+    for name in model_names:
+        try:
+            model = genai.GenerativeModel(name)
+            response = model.generate_content(prompt)
+            clean_txt = response.text.replace("```json", "").replace("```", "").strip()
+            start_idx = clean_txt.find('[')
+            end_idx = clean_txt.rfind(']')
+            if start_idx != -1 and end_idx != -1:
+                clean_txt = clean_txt[start_idx:end_idx+1]
+            data = json.loads(clean_txt)
+            if isinstance(data, list):
+                return data
+        except Exception as e:
+            print(f"Failed batch topic modeling with {name}: {e}")
+            continue
+            
+    return []
 
 
 def analyze_text_hybrid(text, parent_text=None, inherited_topic=None):
@@ -1125,6 +1172,7 @@ def bulk_analyze_posts(posts_qs, batch=None):
     
 
     analyzed_count = 0
+    newly_analyzed_parents = []
 
     for idx, post in enumerate(posts_qs):
 
@@ -1238,11 +1286,41 @@ def bulk_analyze_posts(posts_qs, batch=None):
 
             )
 
+            newly_analyzed_parents.append(post)
+
         
 
         analyzed_count += 1
 
         
+
+    # Phase 2: Batch AI Topic Modeling for newly analyzed parent posts
+    if newly_analyzed_parents:
+        import os
+        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("ai_key")
+        if api_key and HAS_GEMINI_SDK:
+            print(f"Running batch AI topic modeling for {len(newly_analyzed_parents)} parent posts...")
+            posts_data = [{"id": p.id, "content": p.content[:400]} for p in newly_analyzed_parents]
+            try:
+                batch_results = batch_ai_topic_modeling(posts_data, api_key)
+                # Create a lookup map of id -> result
+                results_map = {item["id"]: item for item in batch_results if "id" in item}
+                
+                # Update the TopicTags in the database
+                for post in newly_analyzed_parents:
+                    ai_res = results_map.get(post.id)
+                    if ai_res:
+                        ai_topic = ai_res.get("topic", "عام")
+                        # Find the TopicTag for this post's sentiment result
+                        sent_res = post.sentiments.first()
+                        if sent_res:
+                            tag = sent_res.tags.first()
+                            if tag:
+                                tag.topic_label = ai_topic
+                                tag.save()
+                                print(f"   [Batch AI Update] Updated Post ID {post.id} topic to '{ai_topic}'")
+            except Exception as e:
+                print(f"Error during batch AI topic modeling update: {e}")
 
     print(f"Finished bulk analysis! Total analyzed: {analyzed_count}")
 
