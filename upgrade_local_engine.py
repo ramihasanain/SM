@@ -527,7 +527,10 @@ def upgrade_sentiment_engine():
     # Step 4: Fallback to Gemini for deep analysis (Only for comments with low confidence, AND ONLY if no custom keyword match!)
     final_sentiment = local_sentiment
     
-    if is_comment and not has_custom_match and (local_confidence < 0.85 or "Offline" in engine_used) and api_key and HAS_GEMINI_SDK:
+    # Minimize AI reliance: only fall back to Gemini for comments that are moderately long (word count > 3)
+    # and have low local confidence (less than 0.60), bypassing fallback entirely for simple/short/confident offline ones.
+    word_count = len(cleaned.split()) if cleaned else 0
+    if is_comment and not has_custom_match and word_count > 3 and (local_confidence < 0.60) and api_key and HAS_GEMINI_SDK:
         advanced_res = analyze_complex_sentiment(cleaned, local_sentiment, api_key)
         time.sleep(1)
         if advanced_res:
