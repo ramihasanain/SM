@@ -666,10 +666,17 @@ def dashboard_stats(request):
     neg_count = sentiments.filter(label='سلبي').count()
     neu_count = sentiments.filter(label='محايد').count()
     
-    topics = TopicTag.objects.filter(result__post__profile__user=request.user).values('topic_label').annotate(count=Count('id')).order_by('-count')[:5]
+    topics = TopicTag.objects.filter(
+        result__post__profile__user=request.user,
+        result__post__media_type='post'
+    ).values('topic_label').annotate(count=Count('id')).order_by('-count')[:5]
     top_topics = []
     for t in topics:
-        res = SentimentResult.objects.filter(tags__topic_label=t['topic_label'], post__profile__user=request.user).first()
+        res = SentimentResult.objects.filter(
+            tags__topic_label=t['topic_label'],
+            post__profile__user=request.user,
+            post__media_type='post'
+        ).first()
         label = res.label if res else 'محايد'
         top_topics.append({
             'topic': t['topic_label'],
@@ -852,7 +859,7 @@ def post_details(request, pk):
             'author_name': c.author_name,
             'sentiment': c_data.get('sentiment', 'محايد'),
             'score': c_data.get('score', 0.5),
-            'topic': c_data.get('topic', 'غير حدد'),
+            'topic': '',
             # Include new sarcasm and engine details in nested views
             'is_sarcastic': c_data.get('is_sarcastic', False),
             'sarcasm_explanation': c_data.get('sarcasm_explanation', ''),
@@ -870,16 +877,15 @@ def post_details(request, pk):
 @permission_classes([IsAuthenticated])
 def active_topics(request):
     """
-    يجلب جميع المواضيع التصنيفية الفريدة الموجودة في قاعدة البيانات للمستخدم الحالي.
+    يجلب جميع المواضيع التصنيفية الفريدة الموجودة في قاعدة البيانات للمنشورات الأصلية للمستخدم الحالي.
     """
     labels = TopicTag.objects.filter(
-        result__post__profile__user=request.user
+        result__post__profile__user=request.user,
+        result__post__media_type='post'
     ).values_list('topic_label', flat=True).distinct()
     
-    labels = [l for l in labels if l and l.strip()]
-    
-    # المواضيع الافتراضية لضمان عدم خلو القائمة في البداية
-    default_topics = ['خدمة العملاء', 'جودة المنتج', 'التشكيلة الجديدة', 'العروض', 'سياسة الإرجاع', 'مشاكل تقنية']
-    
-    combined = list(set(list(labels) + default_topics))
-    return Response(sorted(combined))
+    unique_topics = sorted(list(set([l for l in labels if l and l.strip()])))
+    if not unique_topics:
+        unique_topics = ['عام']
+        
+    return Response(unique_topics)

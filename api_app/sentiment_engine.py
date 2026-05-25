@@ -1235,17 +1235,19 @@ def bulk_analyze_posts(posts_qs, batch=None):
 
         
 
-        # 2. Save TopicTag
+        # 2. Save TopicTag (Only for parent posts)
 
-        TopicTag.objects.create(
+        if is_parent_post:
 
-            result=sentiment_obj,
+            TopicTag.objects.create(
 
-            topic_label=res.get("topic", "عام"),
+                result=sentiment_obj,
 
-            confidence=0.90
+                topic_label=res.get("topic", "عام"),
 
-        )
+                confidence=0.90
+
+            )
 
         
 

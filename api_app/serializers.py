@@ -131,6 +131,8 @@ class PostSerializer(serializers.ModelSerializer):
         return 0.5
 
     def get_topic(self, obj):
+        if obj.media_type == 'comment':
+            return ""
         sentiment = self._get_first_sentiment(obj)
         if sentiment:
             tags = list(sentiment.tags.all())
