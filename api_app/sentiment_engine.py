@@ -943,6 +943,7 @@ def analyze_complex_sentiment(text, local_sentiment, api_key):
 
 
 def analyze_text_hybrid(text, parent_text=None, inherited_topic=None):
+    is_comment = True
     if not text or not text.strip():
         return analyze_sentiment_local("")
         
@@ -1164,27 +1165,15 @@ def bulk_analyze_posts(posts_qs, batch=None):
 
         if is_parent_post:
             # Parent posts are always classified as Neutral (محايد) for sentiment
-            # But we run AI topic modeling on them for maximum topic precision!
-            import os
-            api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("ai_key")
-            
+            # Blazing-fast offline local topic modeling!
             detected_topic = "عام"
             keywords = []
             
-            if api_key and HAS_GEMINI_SDK:
-                try:
-                    ai_topic_res = get_ai_topic_modeling(post.content, api_key)
-                    detected_topic = ai_topic_res.get("topic", "عام")
-                    keywords = ai_topic_res.get("keywords", [])
-                except Exception as e:
-                    print(f"Error fetching AI topic modeling for parent post: {e}")
-            
-            # Fallback to local keyword rules
-            if detected_topic == "عام":
-                for topic, keywords_list in ARABIC_TOPIC_RULES.items():
-                    if any(kw in post.content.lower() for kw in keywords_list):
-                        detected_topic = topic
-                        break
+            cleaned = clean_arabic_text(post.content) if post.content else ""
+            for topic, keywords_list in ARABIC_TOPIC_RULES.items():
+                if any(kw in cleaned.lower() for kw in keywords_list):
+                    detected_topic = topic
+                    break
                         
             res = {
                 "sentiment": "محايد",
