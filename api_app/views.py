@@ -29,7 +29,6 @@ except ImportError:
     )
 
 from django.conf import settings
-from tweety import Twitter
 
 # ==========================================================
 # 1. USER VIEWS
@@ -120,40 +119,6 @@ def profile_detail(request, pk):
     elif request.method == 'DELETE':
         item.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def add_x_profile(request):
-    username = request.data.get('username')
-    if not username:
-        return Response({'error': 'Username is required'}, status=status.HTTP_400_BAD_REQUEST)
-    
-    username = username.replace('@', '').strip()
-
-    try:
-        app = Twitter("session")
-        if settings.X_DUMMY_USERNAME and settings.X_DUMMY_PASSWORD:
-            try:
-                app.sign_in(settings.X_DUMMY_USERNAME, settings.X_DUMMY_PASSWORD)
-            except:
-                pass
-
-        user_info = app.get_user_info(username)
-        
-        profile, created = SocialProfile.objects.update_or_create(
-            user=request.user,
-            platform='twitter',
-            platform_account_id=getattr(user_info, 'rest_id', getattr(user_info, 'id', username)),
-            defaults={
-                'account_name': getattr(user_info, 'name', username),
-                'url': f"https://x.com/{username}",
-                'profile_picture_url': getattr(user_info, 'profile_image_url_https', ''),
-                'followers_count': getattr(user_info, 'followers_count', 0),
-            }
-        )
-        return Response({'message': 'X profile added successfully', 'profile': SocialProfileSerializer(profile).data})
-    except Exception as e:
-        return Response({'error': f'Failed to fetch X profile: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # ==========================================================
 # 3. PAYMENT TXN VIEWS
@@ -686,7 +651,6 @@ def dashboard_stats(request):
         })
         
     fb_posts = total_posts_qs.filter(profile__platform='facebook').count()
-    x_posts = total_posts_qs.filter(profile__platform='twitter').count()
     
     # Dynamic Timeline based on actual data dates (Last 30 days of available data)
     from django.db.models.functions import TruncDate
@@ -747,13 +711,12 @@ def dashboard_stats(request):
         },
         'platform_distribution': {
             'facebook': fb_posts,
-            'twitter': x_posts
         },
         'top_topics': top_topics,
         'timeline': timeline
     })
 
-from .social_sync import fetch_facebook_posts, fetch_x_posts
+from .social_sync import fetch_facebook_posts
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -775,20 +738,8 @@ def sync_profile(request, pk):
             return Response({'message': 'Synced successfully', 'profile': SocialProfileSerializer(profile).data})
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    elif profile.platform == 'twitter':
-        try:
-            fetch_x_posts(profile.id)
-            profile.refresh_from_db()
-            
-            # Asynchronous automatic sentiment analysis trigger after sync
-            un_analyzed = Post.objects.filter(profile=profile, sentiments__isnull=True)
-            trigger_background_analysis(un_analyzed)
-            
-            return Response({'message': 'Synced successfully', 'profile': SocialProfileSerializer(profile).data})
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     else:
-        return Response({'error': 'Sync not implemented for this platform'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': 'Sync is only supported for Facebook pages'}, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])

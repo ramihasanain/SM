@@ -18,7 +18,6 @@ class CustomUser(AbstractUser):
 
 class SocialProfile(models.Model):
     PLATFORM_CHOICES = (
-        ('twitter', 'Twitter'),
         ('facebook', 'Facebook'),
     )
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='social_profiles')

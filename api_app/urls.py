@@ -10,7 +10,6 @@ urlpatterns = [
     
     # 2. Social Profile
     path('profiles/', views.profile_list_create, name='profile-list'),
-    path('profiles/add-x/', views.add_x_profile, name='add-x-profile'),
     path('profiles/<int:pk>/', views.profile_detail, name='profile-detail'),
 
     # 3. Payment Txn
@@ -65,7 +64,5 @@ urlpatterns = [
     # 14. OAuth
     path('oauth/facebook/login/', oauth_views.facebook_login, name='oauth-facebook-login'),
     path('oauth/facebook/callback/', oauth_views.facebook_callback, name='oauth-facebook-callback'),
-    path('oauth/x/login/', oauth_views.x_login, name='oauth-x-login'),
-    path('oauth/x/callback/', oauth_views.x_callback, name='oauth-x-callback'),
     path('profiles/<int:pk>/sync/', views.sync_profile, name='sync-profile'),
 ]
