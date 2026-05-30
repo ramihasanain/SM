@@ -271,6 +271,54 @@ ARABIC_NEGATIVE_KEYWORDS = [
 
 ]
 
+# Conservative sarcasm detection — hyperbolic praise and ironic markers only
+SARCASM_HYPERBOLIC_PRAISE = {
+    'ممتاز', 'رائع', 'خيال', 'خيالي', 'اسطور', 'اسطوري', 'أسطوري', 'تحف', 'تحفة',
+    'genius', 'perfect', 'بيرفكت', 'خراف', 'خرافي', 'مذهل', 'رهيب', 'عظيم', 'fabulous',
+    'اسطور', 'يجنن', 'يهبل', 'مبدع', 'عبقري', 'تحفة', 'اسطوري',
+}
+SARCASM_DEGREE_TRIGGERS = ('لدرجة ان', 'لدرجة إن', 'لدرجة', 'لدرجه')
+SARCASM_IRONIC_EMOJIS = ('🔥', '👏', '😂', '😅', '🙄')
+SARCASM_SURFACE_PRAISE = {'شغال', 'شغالة', 'ممتاز', 'رائع', 'سريع', 'سريعة', 'perfect', 'بيرفكت'}
+SARCASM_NEGATIVE_METAPHORS = {
+    'دفاية', 'دفايه', 'دفّاية', 'حر', 'حار', 'سخن', 'سخنة',
+    'ما بفتح', 'ما بتفتح', 'ما يفتح', 'ما بيفتح', 'ما بشتغل', 'ما يشتغل',
+}
+
+
+def _text_has_hyperbolic_praise(text):
+    cleaned = clean_arabic_text(text).lower() if text else ""
+    return any(word in cleaned for word in SARCASM_HYPERBOLIC_PRAISE)
+
+
+def _text_has_any_positive_sentiment(text):
+    if not text:
+        return False
+    cleaned = clean_arabic_text(text).lower()
+    if _text_has_hyperbolic_praise(text):
+        return True
+    return any(kw in cleaned for kw in ARABIC_POSITIVE_KEYWORDS)
+
+
+def _validate_sarcasm_result(text, data):
+    """Post-process Gemini output to reject weak sarcasm classifications."""
+    if not data.get("is_sarcastic", False):
+        return data
+
+    explanation = (data.get("sarcasm_explanation") or "").strip()
+    if not explanation:
+        data["is_sarcastic"] = False
+        data["sarcasm_explanation"] = ""
+        return data
+
+    final_sent = data.get("final_sentiment", "")
+    if final_sent == "سلبي" and not _text_has_any_positive_sentiment(text):
+        data["is_sarcastic"] = False
+        data["sarcasm_explanation"] = ""
+        return data
+
+    return data
+
 
 
 ARABIC_TOPIC_RULES = {
@@ -686,33 +734,40 @@ def analyze_sentiment_local(text):
             else:
                 neg_match_score += weight
                 
-    # 3. Local Sarcasm Engine Logic
+    # 3. Conservative Local Sarcasm Engine — only clear ironic patterns
     is_sarcastic = False
     sarcasm_explanation = ""
-    
-    # Rule A: Sentiment Clash
-    if pos_match_score >= 1.0 and neg_match_score >= 1.0:
+
+    has_hyperbolic_praise = _text_has_hyperbolic_praise(cleaned) or pos_match_score >= 1.5
+    has_negation = any(neg in tokens for neg in ARABIC_NEGATIONS)
+    has_degree_trigger = any(trigger in cleaned for trigger in SARCASM_DEGREE_TRIGGERS)
+
+    # Rule B: Laughing + ironic praise (not plain complaint with laugh)
+    has_laugh = any(
+        token in ARABIC_LAUGHS or any(laugh in token for laugh in ['هههه', 'ههه'])
+        for token in tokens
+    )
+    if has_laugh and neg_match_score >= 1.5 and pos_match_score >= 1.0:
         is_sarcastic = True
-        sarcasm_explanation = "تناقض في الكلمات: تعليق يحتوي على كلمات إيجابية وسلبية معاً بنبرة تهكمية."
-        
-    # Rule B: Laughing + Negative sentiment
-    has_laugh = any(token in ARABIC_LAUGHS or any(laugh in token for laugh in ['هههه', 'ههه']) for token in tokens)
-    if has_laugh and neg_match_score >= 0.5:
+        sarcasm_explanation = "ضحك مع مديح ساخر: نبرة تهكمية وليست شكوى مباشرة."
+
+    # Rule C: Praise + "لدرجة" + negation (e.g. "ممتاز لدرجة ما بشتغل", "سريعة لدرجة ما بتفتح")
+    if has_degree_trigger and has_negation and (has_hyperbolic_praise or pos_match_score >= 1.0):
         is_sarcastic = True
-        sarcasm_explanation = "ضحك مع استياء: دمج الضحك مع كلمات سلبية يدل على التهكم والسخرية."
-        
-    # Rule C: Sentiment clash via "but" or "to the extent" (e.g. "سريع جداً بس ما بفتح" / "سريع لدرجة ما بفتح")
-    has_but = any(but in tokens for but in ['بس', 'لكن', 'الا', 'مع ان', 'لدرجة', 'لدرجه'])
-    if has_but and pos_match_score >= 1.0 and any(neg in tokens for neg in ARABIC_NEGATIONS):
+        sarcasm_explanation = "مديح متبوع بنفي وظيفة أساسية عبر «لدرجة» — نمط تهكم واضح."
+
+    # Rule D: Praise + ironic emoji + negative context (e.g. "شغال دفّاية بالصيف 🔥")
+    has_ironic_emoji = any(emoji in text for emoji in SARCASM_IRONIC_EMOJIS)
+    has_surface_praise = pos_match_score >= 1.0 or any(word in cleaned for word in SARCASM_SURFACE_PRAISE)
+    has_negative_context = (
+        neg_match_score >= 0.5
+        or any(metaphor in cleaned for metaphor in SARCASM_NEGATIVE_METAPHORS)
+    )
+    if has_ironic_emoji and has_surface_praise and has_negative_context:
         is_sarcastic = True
-        sarcasm_explanation = "استدراك ساخر: مدح صفة متبوعة بنفي عمل أو وظيفة أساسية للمنتج."
-        
-    # If sarcasm is detected locally, invert positive sentiment to negative!
-    if is_sarcastic:
-        neg_match_score = max(neg_match_score, pos_match_score + 1.0)
-        pos_match_score = 0.0
-        
-    # Calculate scores and label
+        sarcasm_explanation = "مديح ظاهري مع سياق سلبي ورمز ساخر — تهكم واضح."
+
+    # Calculate scores and label (sarcasm flag is independent; no forced sentiment inversion)
     total_score = pos_match_score + neg_match_score
     if total_score == 0:
         label = "محايد"
@@ -732,6 +787,13 @@ def analyze_sentiment_local(text):
     else:
         label = "محايد"
         pos_pct, neg_pct, neu_pct = 0.33, 0.33, 0.34
+
+    # Confirmed sarcasm carries a negative true meaning (without broad score inversion)
+    if is_sarcastic and label == "إيجابي":
+        label = "سلبي"
+        neg_pct = max(neg_pct, 0.65)
+        pos_pct = min(pos_pct, 0.20)
+        neu_pct = round(1.0 - pos_pct - neg_pct, 2)
         
     # Determine topic
     detected_topic = "عام"
@@ -808,20 +870,28 @@ def analyze_complex_sentiment(text, local_sentiment, api_key):
     model_names = ['gemini-2.0-flash', 'gemini-1.5-flash']
     
     prompt = f"""
-    أنت خبير لغوي متخصص في تحليل المشاعر والآراء على منصات التواصل الاجتماعي، ومحترف في كشف السخرية والتهكم المبطن (Sarcasm) في اللهجات العربية المختلفة (خاصة الشامية والمصرية والخليجية).
+    أنت محلل مشاعر متوازن متخصص في تحليل الآراء على منصات التواصل الاجتماعي باللهجات العربية (الشامية، المصرية، الخليجية).
     
     قم بتحليل النص التالي بدقة مع الأخذ في الاعتبار أن التصنيف المحلي المبدئي للمشاعر هو: "{local_sentiment}".
     
     النص المراد تحليله: "{text}"
     
+    قواعد مهمة للتهكم (Sarcasm) — كن محافظاً وتجنب الإيجابيات الكاذبة:
+    - لا تضع is_sarcastic=true إلا إذا كان التهكم واضحاً ولا يُفسر المعنى إلا على أنه سخرية.
+    - لا تعتبر شكوى مباشرة، مراجعة مختلطة، أو نقداً بنّاءً تهكماً.
+    - أمثلة ليست تهكماً: "الخدمة جيدة لكن بطيئة"، "ما رضيت عن المنتج"، "سريع بس ما بفتح".
+    - أمثلة تهكم حقيقي: "اللابتوب شغال دفّاية بالصيف"، "خدمة سريعة لدرجة ما بتفتح"، "ممتاز لدرجة ما بشتغل".
+    - final_sentiment يُحدّد حسب المعنى الحقيقي؛ النص السلبي الصريح ليس بالضرورة تهكماً.
+    - إذا كان is_sarcastic=true فيجب أن يكون sarcasm_explanation غير فارغ ويوضّح سبب التهكم.
+    
     المطلوب استخراجه:
-    1. final_sentiment: تحديد المشاعر النهائية بدقة (إيجابي، سلبي، أو محايد). انتبه جداً للسخرية؛ النص الساخر الذي يظهر كإيجابي هو في الحقيقة سلبي جداً!
+    1. final_sentiment: تحديد المشاعر النهائية (إيجابي، سلبي، أو محايد).
     2. pos_score: درجة الإيجابية كقيمة عشرية بين 0.0 و 1.0.
     3. neg_score: درجة السلبية كقيمة عشرية بين 0.0 و 1.0.
     4. neu_score: درجة الحياد كقيمة عشرية بين 0.0 و 1.0.
     (ملاحظة: مجموع الدرجات الثلاث يجب أن يكون قريباً جداً من 1.0).
-    5. is_sarcastic: قيمة منطقية (true إذا كان النص يحتوي على سخرية أو تهكم مبطن، وإلا false).
-    6. sarcasm_explanation: شرح مبسط ومختصر جداً باللغة العربية لسبب اعتبار النص ساخراً (إذا كان كذلك)، وإلا اتركه فارغاً "".
+    5. is_sarcastic: true فقط للتهكم الواضح، وإلا false.
+    6. sarcasm_explanation: شرح مختصر بالعربية لسبب التهكم إن وُجد، وإلا "".
     7. topic: تصنيف موضوع النص بكلمة أو اثنتين فقط (مثال: خدمة عملاء، جودة منتج، سرعة توصيل، أسعار وعروض، إلخ).
     8. keywords: قائمة تحتوي على أهم 3 كلمات مفتاحية في النص.
     
@@ -833,8 +903,8 @@ def analyze_complex_sentiment(text, local_sentiment, api_key):
       "pos_score": 0.1,
       "neg_score": 0.8,
       "neu_score": 0.1,
-      "is_sarcastic": true,
-      "sarcasm_explanation": "شرح السخرية هنا",
+      "is_sarcastic": false,
+      "sarcasm_explanation": "",
       "topic": "موضوع النص",
       "keywords": ["كلمة1", "كلمة2", "كلمة3"]
     }}
@@ -846,6 +916,7 @@ def analyze_complex_sentiment(text, local_sentiment, api_key):
             response = model.generate_content(prompt)
             clean_txt = response.text.replace("```json", "").replace("```", "").strip()
             data = json.loads(clean_txt)
+            data = _validate_sarcasm_result(text, data)
             
             final_sent = data.get("final_sentiment", local_sentiment)
             if final_sent not in ["إيجابي", "سلبي", "محايد"]:
