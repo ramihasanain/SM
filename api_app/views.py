@@ -731,16 +731,22 @@ def dashboard_stats(request):
         idx = 0
         while day <= end_date:
             sent = sentiment_by_day.get(day, {})
-            timeline.append({
-                'day': idx + 1,
-                'date': day.strftime('%Y-%m-%d'),
-                'posts': posts_by_day.get(day, 0),
-                'comments': comments_by_day.get(day, 0),
-                'pos': sent.get('pos', 0),
-                'neg': sent.get('neg', 0),
-                'neu': sent.get('neu', 0),
-            })
-            idx += 1
+            posts_n = posts_by_day.get(day, 0)
+            comments_n = comments_by_day.get(day, 0)
+            pos_n = sent.get('pos', 0)
+            neg_n = sent.get('neg', 0)
+            neu_n = sent.get('neu', 0)
+            if posts_n or comments_n or pos_n or neg_n or neu_n:
+                timeline.append({
+                    'day': idx + 1,
+                    'date': day.strftime('%Y-%m-%d'),
+                    'posts': posts_n,
+                    'comments': comments_n,
+                    'pos': pos_n,
+                    'neg': neg_n,
+                    'neu': neu_n,
+                })
+                idx += 1
             day += timedelta(days=1)
 
     return Response({
