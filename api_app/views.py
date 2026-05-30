@@ -749,6 +749,36 @@ def dashboard_stats(request):
                 idx += 1
             day += timedelta(days=1)
 
+    engagement_buckets = {}
+    for post in total_posts_qs.filter(posted_at__isnull=False).iterator():
+        eg = post.engagement_json or {}
+        likes_n = int(eg.get('likes') or 0)
+        shares_n = int(eg.get('shares') or 0)
+        comments_eng = int(eg.get('comments') or 0)
+        if not (likes_n or shares_n or comments_eng):
+            continue
+        day = post.posted_at.date()
+        if day not in engagement_buckets:
+            engagement_buckets[day] = {'likes': 0, 'shares': 0, 'comments_eng': 0}
+        engagement_buckets[day]['likes'] += likes_n
+        engagement_buckets[day]['shares'] += shares_n
+        engagement_buckets[day]['comments_eng'] += comments_eng
+
+    engagement_timeline = []
+    total_likes = total_shares = total_interactions = 0
+    for day in sorted(engagement_buckets.keys()):
+        bucket = engagement_buckets[day]
+        interactions_n = bucket['likes'] + bucket['shares'] + bucket['comments_eng']
+        total_likes += bucket['likes']
+        total_shares += bucket['shares']
+        total_interactions += interactions_n
+        engagement_timeline.append({
+            'date': day.strftime('%Y-%m-%d'),
+            'likes': bucket['likes'],
+            'shares': bucket['shares'],
+            'interactions': interactions_n,
+        })
+
     return Response({
         'total_posts': total_posts,
         'total_comments': total_comments,
@@ -766,7 +796,13 @@ def dashboard_stats(request):
             'facebook': fb_posts,
         },
         'top_topics': top_topics,
-        'timeline': timeline
+        'timeline': timeline,
+        'engagement_timeline': engagement_timeline,
+        'engagement_summary': {
+            'likes': total_likes,
+            'shares': total_shares,
+            'interactions': total_interactions,
+        },
     })
 
 from .social_sync import fetch_facebook_posts
