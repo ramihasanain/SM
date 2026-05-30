@@ -652,50 +652,61 @@ def dashboard_stats(request):
         
     fb_posts = total_posts_qs.filter(profile__platform='facebook').count()
     
-    # Dynamic Timeline based on actual data dates (Last 30 days of available data)
+    # Continuous 14-day timeline: posts, comments, and comment sentiment per day
     from django.db.models.functions import TruncDate
     from django.db.models import Q
-    
-    daily_sentiments = SentimentResult.objects.filter(post__profile__user=request.user)\
-        .annotate(date=TruncDate('post__posted_at'))\
-        .values('date')\
+
+    TIMELINE_DAYS = 14
+    today = timezone.now().date()
+    start_date = today - timedelta(days=TIMELINE_DAYS - 1)
+
+    posts_by_day = {
+        row['date']: row['count']
+        for row in posts_qs.filter(media_type='post', posted_at__date__gte=start_date)
+        .annotate(date=TruncDate('posted_at'))
+        .values('date')
+        .annotate(count=Count('id'))
+        if row['date']
+    }
+    comments_by_day = {
+        row['date']: row['count']
+        for row in posts_qs.filter(media_type='comment', posted_at__date__gte=start_date)
+        .annotate(date=TruncDate('posted_at'))
+        .values('date')
+        .annotate(count=Count('id'))
+        if row['date']
+    }
+    sentiment_by_day = {
+        row['date']: row
+        for row in SentimentResult.objects.filter(
+            post__profile__user=request.user,
+            post__media_type='comment',
+            post__posted_at__date__gte=start_date,
+        )
+        .annotate(date=TruncDate('post__posted_at'))
+        .values('date')
         .annotate(
             pos=Count('id', filter=Q(label='إيجابي')),
             neg=Count('id', filter=Q(label='سلبي')),
             neu=Count('id', filter=Q(label='محايد')),
-            total=Count('id')
-        ).order_by('-date')[:30]
-    
+        )
+        if row['date']
+    }
+
     timeline = []
-    # Reverse to show oldest to newest among the last 30 active days
-    for idx, item in enumerate(reversed(daily_sentiments)):
-        if not item['date']: continue
-        date_str = str(item['date'])
+    for i in range(TIMELINE_DAYS):
+        day = start_date + timedelta(days=i)
+        sent = sentiment_by_day.get(day, {})
         timeline.append({
-            'day': idx + 1,
-            'date': date_str,
-            'pos': item['pos'],
-            'neg': item['neg'],
-            'neu': item['neu'],
-            'posts': item['total'],
-            'comments': 0
+            'day': i + 1,
+            'date': day.strftime('%Y-%m-%d'),
+            'posts': posts_by_day.get(day, 0),
+            'comments': comments_by_day.get(day, 0),
+            'pos': sent.get('pos', 0),
+            'neg': sent.get('neg', 0),
+            'neu': sent.get('neu', 0),
         })
-        
-    if not timeline:
-        # Fallback to empty 30 days if no data
-        now = timezone.now()
-        for i in range(30):
-            day = now - timedelta(days=29-i)
-            timeline.append({
-                'day': i + 1,
-                'date': day.strftime('%Y-%m-%d'),
-                'pos': 0,
-                'neg': 0,
-                'neu': 0,
-                'posts': 0,
-                'comments': 0
-            })
-        
+
     return Response({
         'total_posts': total_posts,
         'total_comments': total_comments,
