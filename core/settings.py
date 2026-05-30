@@ -168,8 +168,4 @@ X_REDIRECT_URI = os.environ.get('X_REDIRECT_URI', 'https://analytica-xi.vercel.a
 X_DUMMY_USERNAME = os.environ.get('X_DUMMY_USERNAME', '')
 X_DUMMY_PASSWORD = os.environ.get('X_DUMMY_PASSWORD', '')
 
-# Google OAuth (Sign in with Google)
-GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '')
-GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET', '')
-GOOGLE_REDIRECT_URI = os.environ.get('GOOGLE_REDIRECT_URI', 'http://localhost:5173/auth/google/callback')
 TOTP_ISSUER = os.environ.get('TOTP_ISSUER', 'Analytica')

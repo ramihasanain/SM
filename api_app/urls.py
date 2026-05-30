@@ -4,10 +4,8 @@ from . import oauth_views
 from . import auth_views
 
 urlpatterns = [
-    # Auth (Google OAuth + TOTP)
+    # Auth (TOTP 2FA)
     path('auth/login/', auth_views.auth_login, name='auth-login'),
-    path('auth/google/url/', auth_views.google_auth_url, name='auth-google-url'),
-    path('auth/google/callback/', auth_views.google_auth_callback, name='auth-google-callback'),
     path('auth/totp/confirm-setup/', auth_views.totp_confirm_setup, name='auth-totp-confirm-setup'),
     path('auth/totp/verify/', auth_views.totp_verify, name='auth-totp-verify'),
 
