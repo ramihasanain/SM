@@ -1,12 +1,36 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
+from django.contrib import messages
 from .models import (
     CustomUser, SocialProfile, PaymentTxn, ScrapeJob, Post, Reaction,
     PlatformMeta, AnalysisBatch, AIModel, SentimentResult, TopicTag, Report, Notification
 )
 
+@admin.action(description='إعادة تعيين 2FA — يُطلب مسح QR عند الدخول التالي')
+def reset_user_totp(modeladmin, request, queryset):
+    count = queryset.update(totp_enabled=False, totp_secret='')
+    modeladmin.message_user(
+        request,
+        f'تمت إعادة تعيين التحقق الثنائي لـ {count} مستخدم. سيُطلب منهم مسح QR عند الدخول التالي.',
+        messages.SUCCESS,
+    )
+
+
 class CustomUserAdmin(UserAdmin):
-    list_display = ('username', 'email', 'is_staff', 'is_active')
+    list_display = ('username', 'email', 'totp_status', 'is_staff', 'is_active')
+    list_filter = UserAdmin.list_filter + ('totp_enabled',)
+    readonly_fields = (*UserAdmin.readonly_fields, 'totp_enabled')
+    actions = [reset_user_totp]
+    fieldsets = UserAdmin.fieldsets + (
+        ('التحقق الثنائي (2FA)', {
+            'fields': ('totp_enabled',),
+            'description': 'لإجبار المستخدم على مسح QR من جديد: حدّده من القائمة → Actions → «إعادة تعيين 2FA».',
+        }),
+    )
+
+    @admin.display(description='2FA', boolean=True)
+    def totp_status(self, obj):
+        return obj.totp_enabled
 
 admin.site.register(CustomUser, CustomUserAdmin)
 
