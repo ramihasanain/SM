@@ -59,6 +59,7 @@ urlpatterns = [
     path('reports/', views.report_list_create, name='report-list'),
     path('reports/<int:pk>/', views.report_detail, name='report-detail'),
     path('reports/<int:pk>/download/', views.download_excel_report, name='report-download'),
+    path('reports/<int:pk>/download-pdf/', views.download_pdf_report, name='report-download-pdf'),
 
     # 12. Notification
     path('notifications/', views.notification_list_create, name='notification-list'),

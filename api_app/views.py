@@ -518,8 +518,7 @@ def download_excel_report(request, pk):
     except Report.DoesNotExist:
         return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
 
-    # Fetch posts in the date range
-    posts = Post.objects.all()
+    posts = Post.objects.filter(profile__user=request.user)
     if report.period_from:
         posts = posts.filter(posted_at__date__gte=report.period_from)
     if report.period_to:
@@ -568,6 +567,33 @@ def download_excel_report(request, pk):
             sarcasm_explanation
         ])
 
+    return response
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def download_pdf_report(request, pk):
+    from django.http import HttpResponse
+    from .report_builder import build_report_snapshot
+    from .report_pdf import build_report_pdf
+
+    try:
+        report = Report.objects.get(pk=pk, user=request.user)
+    except Report.DoesNotExist:
+        return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    lang = request.query_params.get('lang', 'ar')
+    if lang not in ('ar', 'en'):
+        lang = 'ar'
+
+    snapshot = build_report_snapshot(request.user, report.period_from, report.period_to)
+    title = f"Analytica Report #{report.id}"
+    if lang == 'ar':
+        title = f"تقرير Analytica #{report.id}"
+
+    pdf_bytes = build_report_pdf(snapshot, lang=lang, report_title=title)
+    response = HttpResponse(pdf_bytes, content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="report_{report.id}.pdf"'
     return response
 
 
