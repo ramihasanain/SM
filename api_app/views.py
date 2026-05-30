@@ -652,60 +652,96 @@ def dashboard_stats(request):
         
     fb_posts = total_posts_qs.filter(profile__platform='facebook').count()
     
-    # Continuous 14-day timeline: posts, comments, and comment sentiment per day
+    # Timeline: only from first to last day that has posts, comments, or sentiment data
     from django.db.models.functions import TruncDate
     from django.db.models import Q
 
-    TIMELINE_DAYS = 14
-    today = timezone.now().date()
-    start_date = today - timedelta(days=TIMELINE_DAYS - 1)
+    def _distinct_posted_dates(qs):
+        return set(
+            qs.filter(posted_at__isnull=False)
+            .annotate(date=TruncDate('posted_at'))
+            .values_list('date', flat=True)
+            .distinct()
+        )
 
-    posts_by_day = {
-        row['date']: row['count']
-        for row in posts_qs.filter(media_type='post', posted_at__date__gte=start_date)
-        .annotate(date=TruncDate('posted_at'))
-        .values('date')
-        .annotate(count=Count('id'))
-        if row['date']
-    }
-    comments_by_day = {
-        row['date']: row['count']
-        for row in posts_qs.filter(media_type='comment', posted_at__date__gte=start_date)
-        .annotate(date=TruncDate('posted_at'))
-        .values('date')
-        .annotate(count=Count('id'))
-        if row['date']
-    }
-    sentiment_by_day = {
-        row['date']: row
-        for row in SentimentResult.objects.filter(
-            post__profile__user=request.user,
-            post__media_type='comment',
-            post__posted_at__date__gte=start_date,
+    active_dates = (
+        _distinct_posted_dates(posts_qs.filter(media_type='post'))
+        | _distinct_posted_dates(posts_qs.filter(media_type='comment'))
+        | set(
+            SentimentResult.objects.filter(
+                post__profile__user=request.user,
+                post__media_type='comment',
+                post__posted_at__isnull=False,
+            )
+            .annotate(date=TruncDate('post__posted_at'))
+            .values_list('date', flat=True)
+            .distinct()
         )
-        .annotate(date=TruncDate('post__posted_at'))
-        .values('date')
-        .annotate(
-            pos=Count('id', filter=Q(label='إيجابي')),
-            neg=Count('id', filter=Q(label='سلبي')),
-            neu=Count('id', filter=Q(label='محايد')),
-        )
-        if row['date']
-    }
+    )
+    active_dates.discard(None)
 
     timeline = []
-    for i in range(TIMELINE_DAYS):
-        day = start_date + timedelta(days=i)
-        sent = sentiment_by_day.get(day, {})
-        timeline.append({
-            'day': i + 1,
-            'date': day.strftime('%Y-%m-%d'),
-            'posts': posts_by_day.get(day, 0),
-            'comments': comments_by_day.get(day, 0),
-            'pos': sent.get('pos', 0),
-            'neg': sent.get('neg', 0),
-            'neu': sent.get('neu', 0),
-        })
+    if active_dates:
+        start_date = min(active_dates)
+        end_date = max(active_dates)
+
+        posts_by_day = {
+            row['date']: row['count']
+            for row in posts_qs.filter(
+                media_type='post',
+                posted_at__date__gte=start_date,
+                posted_at__date__lte=end_date,
+            )
+            .annotate(date=TruncDate('posted_at'))
+            .values('date')
+            .annotate(count=Count('id'))
+            if row['date']
+        }
+        comments_by_day = {
+            row['date']: row['count']
+            for row in posts_qs.filter(
+                media_type='comment',
+                posted_at__date__gte=start_date,
+                posted_at__date__lte=end_date,
+            )
+            .annotate(date=TruncDate('posted_at'))
+            .values('date')
+            .annotate(count=Count('id'))
+            if row['date']
+        }
+        sentiment_by_day = {
+            row['date']: row
+            for row in SentimentResult.objects.filter(
+                post__profile__user=request.user,
+                post__media_type='comment',
+                post__posted_at__date__gte=start_date,
+                post__posted_at__date__lte=end_date,
+            )
+            .annotate(date=TruncDate('post__posted_at'))
+            .values('date')
+            .annotate(
+                pos=Count('id', filter=Q(label='إيجابي')),
+                neg=Count('id', filter=Q(label='سلبي')),
+                neu=Count('id', filter=Q(label='محايد')),
+            )
+            if row['date']
+        }
+
+        day = start_date
+        idx = 0
+        while day <= end_date:
+            sent = sentiment_by_day.get(day, {})
+            timeline.append({
+                'day': idx + 1,
+                'date': day.strftime('%Y-%m-%d'),
+                'posts': posts_by_day.get(day, 0),
+                'comments': comments_by_day.get(day, 0),
+                'pos': sent.get('pos', 0),
+                'neg': sent.get('neg', 0),
+                'neu': sent.get('neu', 0),
+            })
+            idx += 1
+            day += timedelta(days=1)
 
     return Response({
         'total_posts': total_posts,
