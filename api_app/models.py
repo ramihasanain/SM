@@ -11,6 +11,9 @@ class CustomUser(AbstractUser):
     plan_type = models.CharField(max_length=50, null=True, blank=True)
     report_schedule = models.CharField(max_length=50, null=True, blank=True)
     timezone = models.CharField(max_length=50, null=True, blank=True)
+    google_id = models.CharField(max_length=255, null=True, blank=True, unique=True)
+    totp_secret = models.CharField(max_length=64, blank=True, default='')
+    totp_enabled = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{self.username} - {self.email}"
