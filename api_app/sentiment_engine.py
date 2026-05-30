@@ -278,7 +278,22 @@ SARCASM_HYPERBOLIC_PRAISE = {
     'اسطور', 'يجنن', 'يهبل', 'مبدع', 'عبقري', 'تحفة', 'اسطوري',
 }
 SARCASM_DEGREE_TRIGGERS = ('لدرجة ان', 'لدرجة إن', 'لدرجة', 'لدرجه')
-SARCASM_IRONIC_EMOJIS = ('🔥', '👏', '😂', '😅', '🙄')
+SARCASM_IRONIC_EMOJIS = ('🔥', '👏', '😂', '😅')
+MIN_STEM_MATCH_LEN = 4
+
+POSITIVE_BLESSING_PHRASES = (
+    'الله يفتح', 'يفتحها عليكم', 'يفتحها عليك', 'بارك الله', 'ما شاء الله', 'ماشاء الله',
+    'اية الرزق', 'آية الرزق', 'الله يبارك', 'ربنا يبارك', 'جعله الله', 'في ميزان حسنات',
+    'الله يعطيكم العافية', 'الله يعطيك العافية', 'كل عام وانتم بخير', 'كل عام وأنتم بخير',
+)
+
+NEUTRAL_INFO_PATTERNS = (
+    r'كم\s+سعر', r'كم\s+السعر', r'كم\s+بيكلف', r'كم\s+بيعمل',
+    r'وكم\s+سعر', r'بكم\s+', r'سعرها\b', r'سعره\b',
+    r'كيف\s+الاسعار', r'كيف\s+الأسعار', r'شو\s+الاسعار', r'شو\s+الأسعار',
+    r'ممكن\s+نعرف', r'بدي\s+اعرف\s+السعر', r'بدي\s+أعرف\s+السعر',
+    r'موجود\s+.+\s+سعر', r'عندكم\s+.+\s+سعر',
+)
 SARCASM_SURFACE_PRAISE = {'شغال', 'شغالة', 'ممتاز', 'رائع', 'سريع', 'سريعة', 'perfect', 'بيرفكت'}
 SARCASM_NEGATIVE_METAPHORS = {
     'دفاية', 'دفايه', 'دفّاية', 'حر', 'حار', 'سخن', 'سخنة',
@@ -300,8 +315,83 @@ def _text_has_any_positive_sentiment(text):
     return any(kw in cleaned for kw in ARABIC_POSITIVE_KEYWORDS)
 
 
+def _is_menu_price_listing(text):
+    cleaned = clean_arabic_text(text).lower() if text else ""
+    has_price = bool(re.search(r'\d+\s*(دينار|jd|د\.?\s*ع)', cleaned)) or 'دينار' in cleaned
+    has_product = any(w in cleaned for w in ('سدر', 'منسف', 'كيلو', 'طبق', 'وجبة', 'مطبخ', 'لحم'))
+    has_complaint = any(w in cleaned for w in ('غالي', 'نصب', 'استغلال', 'سيء', 'ردي', 'زفت', 'مبالغ'))
+    return has_price and has_product and not has_complaint
+
+
+def _classify_text_context(text):
+    """Detect clear non-sarcastic contexts: blessings, price inquiries, menu listings."""
+    if not text or not text.strip():
+        return None
+    cleaned = clean_arabic_text(text).lower()
+
+    if any(phrase in cleaned for phrase in POSITIVE_BLESSING_PHRASES):
+        return "positive_blessing"
+
+    for pattern in NEUTRAL_INFO_PATTERNS:
+        if re.search(pattern, cleaned):
+            return "neutral_info"
+
+    if 'موجود' in cleaned and ('سعر' in cleaned or 'كم' in cleaned):
+        return "neutral_info"
+
+    if _is_menu_price_listing(text):
+        return "neutral_info"
+
+    return None
+
+
+def _result_for_context(context, text):
+    cleaned = clean_arabic_text(text).lower() if text else ""
+    topic = "العروض والخصومات" if any(w in cleaned for w in ('سعر', 'دينار', 'خصم', 'عرض')) else "عام"
+
+    if context == "positive_blessing":
+        return {
+            "sentiment": "إيجابي",
+            "pos_score": 0.85,
+            "neg_score": 0.05,
+            "neu_score": 0.10,
+            "topic": topic,
+            "is_sarcastic": False,
+            "sarcasm_explanation": "",
+            "engine_used": "Context Rules (Blessing/Greeting)",
+            "confidence": 0.92,
+        }
+
+    if context == "neutral_info":
+        return {
+            "sentiment": "محايد",
+            "pos_score": 0.33,
+            "neg_score": 0.33,
+            "neu_score": 0.34,
+            "topic": topic,
+            "is_sarcastic": False,
+            "sarcasm_explanation": "",
+            "engine_used": "Context Rules (Price/Inquiry)",
+            "confidence": 0.90,
+        }
+
+    return None
+
+
 def _validate_sarcasm_result(text, data):
     """Post-process Gemini output to reject weak sarcasm classifications."""
+    ctx = _classify_text_context(text)
+    if ctx == "neutral_info":
+        data["is_sarcastic"] = False
+        data["sarcasm_explanation"] = ""
+        data["final_sentiment"] = "محايد"
+        return data
+    if ctx == "positive_blessing":
+        data["is_sarcastic"] = False
+        data["sarcasm_explanation"] = ""
+        data["final_sentiment"] = "إيجابي"
+        return data
+
     if not data.get("is_sarcastic", False):
         return data
 
@@ -309,6 +399,20 @@ def _validate_sarcasm_result(text, data):
     if not explanation:
         data["is_sarcastic"] = False
         data["sarcasm_explanation"] = ""
+        return data
+
+    explanation_lower = explanation.lower()
+    false_sarcasm_signals = (
+        'حسد', 'دعاء مبطن', 'غير رضا', 'مبطن', 'استياء مبطن',
+        'سعر مبالغ', 'مبالغ فيه', 'سؤال بسيط',
+    )
+    if any(signal in explanation_lower for signal in false_sarcasm_signals):
+        data["is_sarcastic"] = False
+        data["sarcasm_explanation"] = ""
+        if ctx == "positive_blessing":
+            data["final_sentiment"] = "إيجابي"
+        elif ctx == "neutral_info":
+            data["final_sentiment"] = "محايد"
         return data
 
     final_sent = data.get("final_sentiment", "")
@@ -637,6 +741,10 @@ def analyze_sentiment_local(text):
             "engine_used": "Local Lexicon Engine (Offline)",
             "confidence": 0.50
         }
+
+    ctx = _classify_text_context(text)
+    if ctx:
+        return _result_for_context(ctx, text)
         
     cleaned = clean_arabic_text(text).lower()
     
@@ -697,8 +805,8 @@ def analyze_sentiment_local(text):
     for i, token in enumerate(tokens):
         stemmed = light_stem_arabic(token)
         
-        is_pos_match = stemmed in pos_singles or token in all_pos
-        is_neg_match = stemmed in neg_singles or token in all_neg
+        is_pos_match = token in all_pos or (len(stemmed) >= MIN_STEM_MATCH_LEN and stemmed in pos_singles)
+        is_neg_match = token in all_neg or (len(stemmed) >= MIN_STEM_MATCH_LEN and stemmed in neg_singles)
         
         if is_pos_match:
             negated = False
@@ -879,6 +987,9 @@ def analyze_complex_sentiment(text, local_sentiment, api_key):
     قواعد مهمة للتهكم (Sarcasm) — كن محافظاً وتجنب الإيجابيات الكاذبة:
     - لا تضع is_sarcastic=true إلا إذا كان التهكم واضحاً ولا يُفسر المعنى إلا على أنه سخرية.
     - لا تعتبر شكوى مباشرة، مراجعة مختلطة، أو نقداً بنّاءً تهكماً.
+    - لا تعتبر دعاءً أو تهنئة أو بركة تهكماً أبداً (مثل: "الله يفتحها عليكم"، "اية الرزق").
+    - لا تعتبر استفسار سعر أو توفر منتج سلبياً أو ساخراً (مثل: "كم سعر..."، "موجود كبة وكم سعرها"، "كيف الاسعار").
+    - لا تعتبر إعلان قائمة أسعار/منيو تهكماً (مثل: "سدر منسف 15 دينار") ما لم يُذكر استياء صريح.
     - أمثلة ليست تهكماً: "الخدمة جيدة لكن بطيئة"، "ما رضيت عن المنتج"، "سريع بس ما بفتح".
     - أمثلة تهكم حقيقي: "اللابتوب شغال دفّاية بالصيف"، "خدمة سريعة لدرجة ما بتفتح"، "ممتاز لدرجة ما بشتغل".
     - final_sentiment يُحدّد حسب المعنى الحقيقي؛ النص السلبي الصريح ليس بالضرورة تهكماً.
@@ -938,76 +1049,6 @@ def analyze_complex_sentiment(text, local_sentiment, api_key):
             continue
             
     return None
-
-        
-
-    genai.configure(api_key=api_key)
-
-    model_names = ['gemini-2.0-flash', 'gemini-1.5-flash']
-
-    
-
-    prompt = f"""
-
-    قم بتحليل النص التالي واستخرج الموضوع الأساسي والكلمات المفتاحية ككود JSON صالح فقط باللغة العربية دون أي نصوص إضافية أو علامات Markdown:
-
-    
-
-    النص: "{text}"
-
-    
-
-    المطلوب:
-
-    1. topic: الموضوع الأساسي للنص بكلمة أو اثنتين فقط (مثال: خدمة عملاء، جودة منتج، سرعة توصيل، أسعار وعروض، إلخ).
-
-    2. keywords: قائمة تحتوي على أهم 3 كلمات مفتاحية في النص.
-
-    
-
-    صيغة الـ JSON المطلوبة:
-
-    {{
-
-      "topic": "اسم الموضوع",
-
-      "keywords": ["كلمة1", "كلمة2", "كلمة3"]
-
-    }}
-
-    """
-
-    
-
-    for name in model_names:
-
-        try:
-
-            model = genai.GenerativeModel(name)
-
-            response = model.generate_content(prompt)
-
-            clean_txt = response.text.replace("```json", "").replace("```", "").strip()
-
-            data = json.loads(clean_txt)
-
-            return {
-
-                "topic": data.get("topic", "عام"),
-
-                "keywords": data.get("keywords", [])
-
-            }
-
-        except Exception as e:
-
-            print(f"Failed to extract topic with {name}: {e}")
-
-            continue
-
-            
-
-    return {"topic": "عام", "keywords": []}
 
 
 def batch_ai_topic_modeling(posts_data, api_key=None):
@@ -1186,7 +1227,16 @@ def analyze_text_hybrid(text, parent_text=None, inherited_topic=None):
     # Minimize AI reliance: only fall back to Gemini for comments that are moderately long (word count > 3)
     # and have low local confidence (less than 0.60), bypassing fallback entirely for simple/short/confident offline ones.
     word_count = len(cleaned.split()) if cleaned else 0
-    if is_comment and not has_custom_match and word_count > 3 and (local_confidence < 0.60) and api_key and HAS_GEMINI_SDK:
+    skip_gemini_ctx = _classify_text_context(text) in ("neutral_info", "positive_blessing")
+    if (
+        is_comment
+        and not has_custom_match
+        and not skip_gemini_ctx
+        and word_count > 3
+        and (local_confidence < 0.60)
+        and api_key
+        and HAS_GEMINI_SDK
+    ):
         advanced_res = analyze_complex_sentiment(cleaned, local_sentiment, api_key)
         time.sleep(1)
         if advanced_res:
@@ -1203,6 +1253,20 @@ def analyze_text_hybrid(text, parent_text=None, inherited_topic=None):
             pres_name = "Gemini 2.0 Flash" if "2.0" in model_used else "Gemini 1.5 Flash"
             engine_used = f"{pres_name} (Sarcasm Fallback)"
             local_confidence = 0.95
+
+    ctx_override = _classify_text_context(text)
+    if ctx_override:
+        ctx_res = _result_for_context(ctx_override, text)
+        final_sentiment = ctx_res["sentiment"]
+        pos_score = ctx_res["pos_score"]
+        neg_score = ctx_res["neg_score"]
+        neu_score = ctx_res["neu_score"]
+        is_sarcastic = False
+        sarcasm_explanation = ""
+        if detected_topic == "عام":
+            detected_topic = ctx_res["topic"]
+        engine_used = ctx_res["engine_used"]
+        local_confidence = ctx_res["confidence"]
             
     return {
         "sentiment": final_sentiment,

@@ -12,6 +12,45 @@ from api_app.sentiment_engine import (
 )
 
 
+USER_FALSE_POSITIVE_CASES = [
+    {
+        "text": "اية الرزق . الله يفتحها عليكم",
+        "expect_sarcastic": False,
+        "expect_sentiment": "إيجابي",
+        "label": "blessing / prayer",
+    },
+    {
+        "text": "مطبخ ست الحبايب أكل بيتي سدر منسف على كيلو لحم روماني 15 دينار",
+        "expect_sarcastic": False,
+        "expect_sentiment": "محايد",
+        "label": "menu price listing",
+    },
+    {
+        "text": "كم سعر الشيشبرك والكبة المشوية",
+        "expect_sarcastic": False,
+        "expect_sentiment": "محايد",
+        "label": "price inquiry",
+    },
+    {
+        "text": "موجود كبة مشوية وكم سعرها",
+        "expect_sarcastic": False,
+        "expect_sentiment": "محايد",
+        "label": "availability + price inquiry",
+    },
+    {
+        "text": "كيف الاسعار ممكن نعرف",
+        "expect_sarcastic": False,
+        "expect_sentiment": "محايد",
+        "label": "price question",
+    },
+    {
+        "text": "عملائنا الكرام كل عام وانتم بخير. اللي حاب يطلب مني شي يرسلي الان على رقم",
+        "expect_sarcastic": False,
+        "expect_sentiment": "إيجابي",
+        "label": "promotional greeting",
+    },
+]
+
 LOCAL_SARCASM_CASES = [
     {
         "text": "ممتاز لدرجة ما بشتغل",
@@ -50,6 +89,32 @@ LOCAL_SARCASM_CASES = [
         "label": "speed praise + degree + negation",
     },
 ]
+
+
+def run_user_false_positive_tests():
+    print("\n--- User False-Positive Cases (from dashboard) ---")
+    passed = 0
+    failed = 0
+
+    for case in USER_FALSE_POSITIVE_CASES:
+        res = analyze_text_hybrid(case["text"])
+        ok = res.get("is_sarcastic") == case["expect_sarcastic"]
+        if case["expect_sentiment"]:
+            ok = ok and res.get("sentiment") == case["expect_sentiment"]
+
+        status = "PASS" if ok else "FAIL"
+        if ok:
+            passed += 1
+        else:
+            failed += 1
+
+        print(f"  [{status}] {case['label']}")
+        print(f"         sentiment={res.get('sentiment')}, sarcastic={res.get('is_sarcastic')}, engine={res.get('engine_used')}")
+        if res.get("sarcasm_explanation"):
+            print(f"         explanation: {res.get('sarcasm_explanation')[:60]}")
+
+    print(f"\n  User cases: {passed} passed, {failed} failed")
+    return failed == 0
 
 
 def run_local_sarcasm_tests():
@@ -131,6 +196,7 @@ def test():
         print(f"   Key length: {len(api_key)}")
         print(f"   Key starts with: {api_key[:8]}...")
 
+    user_ok = run_user_false_positive_tests()
     local_ok = run_local_sarcasm_tests()
     validation_ok = run_validation_tests()
 
@@ -173,7 +239,7 @@ def test():
         print(f"\nRUNTIME ERROR DURING POST ANALYSIS: {e}")
 
     print("=========================================")
-    all_ok = local_ok and validation_ok and hybrid_ok
+    all_ok = user_ok and local_ok and validation_ok and hybrid_ok
     print(f"OVERALL: {'ALL TESTS PASSED' if all_ok else 'SOME TESTS FAILED'}")
     print("=========================================")
 
