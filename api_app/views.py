@@ -90,7 +90,11 @@ def user_detail(request, pk):
 @permission_classes([IsAuthenticated])
 def profile_list_create(request):
     if request.method == 'GET':
+        from .social_sync import refresh_facebook_page_meta
         items = SocialProfile.objects.filter(user=request.user)
+        for profile in items:
+            if profile.platform == 'facebook' and profile.access_token and not profile.profile_picture_url:
+                refresh_facebook_page_meta(profile)
         serializer = SocialProfileSerializer(items, many=True)
         return Response(serializer.data)
     elif request.method == 'POST':

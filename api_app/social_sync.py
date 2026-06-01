@@ -2,6 +2,35 @@ import requests
 from django.utils import timezone
 from .models import SocialProfile, Post, ScrapeJob
 
+
+def refresh_facebook_page_meta(profile):
+    """تحديث صورة الصفحة وعدد المتابعين من Graph API."""
+    if profile.platform != 'facebook' or not profile.access_token or not profile.platform_account_id:
+        return
+    try:
+        page_info_url = f"https://graph.facebook.com/v19.0/{profile.platform_account_id}"
+        page_info_params = {
+            'access_token': profile.access_token,
+            'fields': 'picture.type(large),followers_count',
+        }
+        info_res = requests.get(page_info_url, params=page_info_params, timeout=15).json()
+        if 'error' in info_res:
+            return
+        pic_url = info_res.get('picture', {}).get('data', {}).get('url', '')
+        followers = info_res.get('followers_count', profile.followers_count)
+        update_fields = []
+        if pic_url:
+            profile.profile_picture_url = pic_url
+            update_fields.append('profile_picture_url')
+        if followers is not None:
+            profile.followers_count = followers
+            update_fields.append('followers_count')
+        if update_fields:
+            profile.save(update_fields=update_fields)
+    except Exception as e:
+        print(f"Could not refresh page meta for {profile.id}: {e}")
+
+
 def fetch_facebook_posts(profile_id):
     """
     وظيفة مبدئية توضح كيفية سحب المنشورات والتعليقات من فيسبوك باستخدام الـ Access Token
@@ -17,6 +46,8 @@ def fetch_facebook_posts(profile_id):
     if not access_token:
         print("No access token found for this profile")
         return
+
+    refresh_facebook_page_meta(profile)
 
     # 1. إنشاء وظيفة السحب (Scrape Job) لتتبع العملية
     job = ScrapeJob.objects.create(

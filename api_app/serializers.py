@@ -85,6 +85,7 @@ class PaymentTxnSerializer(serializers.ModelSerializer):
 
 class ScrapeJobSerializer(serializers.ModelSerializer):
     profile_name = serializers.CharField(source='profile.account_name', read_only=True)
+    profile_picture_url = serializers.CharField(source='profile.profile_picture_url', read_only=True)
     platform = serializers.CharField(source='profile.platform', read_only=True)
 
     class Meta:
