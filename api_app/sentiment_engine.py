@@ -21,6 +21,34 @@ except ImportError:
     HAS_GEMINI_SDK = False
 
 
+def _gemini_model_candidates():
+    """Ordered Gemini model IDs for generateContent (primary + fallbacks)."""
+    primary = (getattr(settings, 'GEMINI_MODEL', None) or 'gemini-2.5-flash').strip()
+    fallbacks_raw = getattr(settings, 'GEMINI_MODEL_FALLBACKS', '') or ''
+    fallbacks = [m.strip() for m in fallbacks_raw.split(',') if m.strip()]
+    if not fallbacks:
+        fallbacks = ['gemini-2.5-flash-lite', 'gemini-flash-latest']
+    names = []
+    for candidate in [primary, *fallbacks]:
+        if candidate and candidate not in names:
+            names.append(candidate)
+    return names
+
+
+def _gemini_display_name(model_id: str) -> str:
+    mid = (model_id or '').lower()
+    if '2.5' in mid and 'lite' in mid:
+        return 'Gemini 2.5 Flash Lite'
+    if '2.5' in mid:
+        return 'Gemini 2.5 Flash'
+    if 'flash-latest' in mid or mid.endswith('-latest'):
+        return 'Gemini Flash'
+    if '2.0' in mid:
+        return 'Gemini 2.0 Flash'
+    if '1.5' in mid:
+        return 'Gemini 1.5 Flash'
+    return 'Gemini'
+
 
 # Try to import PyArabic for advanced Arabic normalization
 
@@ -936,7 +964,7 @@ def get_ai_topic_modeling(text, api_key=None):
         return {"topic": "عام", "keywords": []}
         
     genai.configure(api_key=api_key)
-    model_names = ['gemini-2.0-flash', 'gemini-1.5-flash']
+    model_names = _gemini_model_candidates()
     
     prompt = f"""
     قم بتحليل النص التالي واستخرج الموضوع الأساسي والكلمات المفتاحية ككود JSON صالح فقط باللغة العربية دون أي نصوص إضافية أو علامات Markdown:
@@ -976,7 +1004,7 @@ def analyze_complex_sentiment(text, local_sentiment, api_key):
         return None
         
     genai.configure(api_key=api_key)
-    model_names = ['gemini-2.0-flash', 'gemini-1.5-flash']
+    model_names = _gemini_model_candidates()
     
     prompt = f"""
     أنت محلل مشاعر متوازن متخصص في تحليل الآراء على منصات التواصل الاجتماعي باللهجات العربية (الشامية، المصرية، الخليجية).
@@ -1058,11 +1086,11 @@ def batch_ai_topic_modeling(posts_data, api_key=None):
     if not api_key:
         raise Exception("مفتاح API الخاص بـ Gemini (GEMINI_API_KEY) مفقود في بيئة تشغيل الخادم.")
     if not posts_data:
-        return []
+        return [], settings.GEMINI_MODEL
         
     print(f"🧠 [Batch AI] Sending {len(posts_data)} posts to Gemini for topic classification...")
     genai.configure(api_key=api_key)
-    model_names = ['gemini-2.0-flash', 'gemini-1.5-flash']
+    model_names = _gemini_model_candidates()
     
     input_json = json.dumps(posts_data, ensure_ascii=False, indent=2)
     
@@ -1103,7 +1131,7 @@ def batch_ai_topic_modeling(posts_data, api_key=None):
             data = json.loads(clean_txt)
             if isinstance(data, list):
                 print(f"   🎉 [Batch AI] Successfully parsed {len(data)} classified topics!")
-                return data
+                return data, name
         except Exception as e:
             err_msg = f"{name}: {str(e)}"
             print(f"   ⚠️ [Batch AI] Model failed - {err_msg}")
@@ -1250,8 +1278,8 @@ def analyze_text_hybrid(text, parent_text=None, inherited_topic=None):
             detected_topic = advanced_res.get("topic", detected_topic)
             keywords = advanced_res.get("keywords", keywords)
             
-            model_used = advanced_res.get("_model_used", "gemini-1.5-flash")
-            pres_name = "Gemini 2.0 Flash" if "2.0" in model_used else "Gemini 1.5 Flash"
+            model_used = advanced_res.get("_model_used", settings.GEMINI_MODEL)
+            pres_name = _gemini_display_name(model_used)
             engine_used = f"{pres_name} (Sarcasm Fallback)"
             local_confidence = 0.95
 
@@ -1451,7 +1479,8 @@ def bulk_analyze_posts(posts_qs, batch=None):
             print(f"Running batch AI topic modeling for {len(newly_analyzed_parents)} parent posts...")
             posts_data = [{"id": p.id, "content": p.content[:400]} for p in newly_analyzed_parents]
             try:
-                batch_results = batch_ai_topic_modeling(posts_data, api_key)
+                batch_results, batch_model = batch_ai_topic_modeling(posts_data, api_key)
+                batch_engine_label = f"{_gemini_display_name(batch_model)} (Batch Topic)"
                 # Create a lookup map of id -> result (handling string/int keys)
                 results_map = {}
                 for item in batch_results:
@@ -1470,14 +1499,14 @@ def bulk_analyze_posts(posts_qs, batch=None):
                         sent_res = post.sentiments.first()
                         if sent_res:
                             # Update engine_used to mark it as analyzed by Gemini Topic modeling, preventing any re-sending!
-                            sent_res.engine_used = "Gemini 2.0 Flash (Batch Topic)"
+                            sent_res.engine_used = batch_engine_label
                             sent_res.save()
                             
                             tag = sent_res.tags.first()
                             if tag:
                                 tag.topic_label = ai_topic
                                 tag.save()
-                                print(f"   [Batch AI Update] Updated Post ID {post.id} topic to '{ai_topic}' and engine to 'Gemini 2.0 Flash (Batch Topic)'")
+                                print(f"   [Batch AI Update] Updated Post ID {post.id} topic to '{ai_topic}' and engine to '{batch_engine_label}'")
             except Exception as e:
                 print(f"Error during batch AI topic modeling update: {e}")
 

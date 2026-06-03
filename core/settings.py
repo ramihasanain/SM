@@ -186,6 +186,13 @@ FACEBOOK_REDIRECT_URI = _env('FACEBOOK_REDIRECT_URI')
 # Prefer GEMINI_API_KEY; accept legacy DigitalOcean name "ai_key" during migration.
 GEMINI_API_KEY = _env('GEMINI_API_KEY') or _env('ai_key')
 
+# Gemini model IDs (google-generativeai / v1beta). Override on the server if Google retires a name.
+GEMINI_MODEL = _env('GEMINI_MODEL', default='gemini-2.5-flash')
+GEMINI_MODEL_FALLBACKS = _env(
+    'GEMINI_MODEL_FALLBACKS',
+    default='gemini-2.5-flash-lite,gemini-flash-latest',
+)
+
 TOTP_ISSUER = _env('TOTP_ISSUER', default='Analytica')
 
 if not DEBUG and not _is_build_phase():

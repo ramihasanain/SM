@@ -988,7 +988,7 @@ def run_batch_ai_topics(request):
     يقوم بتشغيل ذكاء Gemini الاصطناعي المجمع لتصنيف مواضيع المنشورات الأصلية التي لم تُصنف بالذكاء الاصطناعي بعد.
     يضمن حظر إرسال أي منشور للـ AI مرتين بشكل قاطع.
     """
-    from .sentiment_engine import batch_ai_topic_modeling
+    from .sentiment_engine import batch_ai_topic_modeling, _gemini_display_name
     import os
     
     api_key = settings.GEMINI_API_KEY
@@ -1020,7 +1020,8 @@ def run_batch_ai_topics(request):
     posts_data = [{"id": p.id, "content": p.content[:400]} for p in posts]
     
     try:
-        batch_results = batch_ai_topic_modeling(posts_data, api_key)
+        batch_results, batch_model = batch_ai_topic_modeling(posts_data, api_key)
+        batch_engine_label = f"{_gemini_display_name(batch_model)} (Batch Topic)"
         results_map = {}
         for item in batch_results:
             if "id" in item:
@@ -1037,7 +1038,7 @@ def run_batch_ai_topics(request):
                 sent_res = post.sentiments.first()
                 if sent_res:
                     # Update engine_used to mark it as analyzed by Gemini Topic modeling, preventing any re-sending!
-                    sent_res.engine_used = "Gemini 2.0 Flash (Batch Topic)"
+                    sent_res.engine_used = batch_engine_label
                     sent_res.save()
                     
                     tag = sent_res.tags.first()
