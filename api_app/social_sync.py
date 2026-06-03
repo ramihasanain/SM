@@ -1,6 +1,9 @@
+import logging
 import requests
 from django.utils import timezone
-from .models import SocialProfile, Post, ScrapeJob
+from .models import SocialProfile, Post, ScrapeJob, Reaction
+
+logger = logging.getLogger(__name__)
 
 
 def refresh_facebook_page_meta(profile):
@@ -27,75 +30,67 @@ def refresh_facebook_page_meta(profile):
             update_fields.append('followers_count')
         if update_fields:
             profile.save(update_fields=update_fields)
-    except Exception as e:
-        print(f"Could not refresh page meta for {profile.id}: {e}")
+    except Exception:
+        logger.exception('Could not refresh page meta for profile %s', profile.id)
 
 
 def fetch_facebook_posts(profile_id):
-    """
-    وظيفة مبدئية توضح كيفية سحب المنشورات والتعليقات من فيسبوك باستخدام الـ Access Token
-    يمكن استدعاء هذه الوظيفة من خلال Celery أو Airflow لتعمل في الخلفية (Background Task).
-    """
+    """سحب المنشورات والتعليقات من فيسبوك باستخدام Access Token الصفحة."""
     try:
         profile = SocialProfile.objects.get(id=profile_id, platform='facebook')
     except SocialProfile.DoesNotExist:
-        print("Profile not found")
+        logger.warning('Facebook profile not found: %s', profile_id)
         return
 
     access_token = profile.access_token
     if not access_token:
-        print("No access token found for this profile")
+        logger.warning('No access token for profile %s', profile_id)
         return
 
     refresh_facebook_page_meta(profile)
 
-    # 1. إنشاء وظيفة السحب (Scrape Job) لتتبع العملية
     job = ScrapeJob.objects.create(
         profile=profile,
         status='running',
         started_at=timezone.now(),
-        records_fetched=0
+        records_fetched=0,
     )
 
     try:
         page_id = profile.platform_account_id
         page_token = profile.access_token
         page_name = profile.account_name or 'Unknown Page'
-        print(f"Fetching posts for page: {page_name}...")
+        logger.info('Fetching posts for page: %s', page_name)
 
         records_fetched = 0
-
         graph_url = f"https://graph.facebook.com/v19.0/{page_id}/posts"
         params = {
             'access_token': page_token,
             'fields': 'id,message,created_time,shares,comments.summary(true).limit(100){id,message,created_time,from},reactions.summary(true).limit(100){name,type}',
-            'limit': 20
+            'limit': 20,
         }
-        
-        response = requests.get(graph_url, params=params)
+
+        response = requests.get(graph_url, params=params, timeout=60)
         data = response.json()
-        
+
         if 'error' in data:
-            print(f"Error fetching page {page_name}: {data['error']['message']}")
+            logger.error('Facebook API error for %s: %s', page_name, data['error'].get('message'))
             job.status = 'failed'
-            job.save()
+            job.save(update_fields=['status'])
             return
 
         posts_data = data.get('data', [])
 
-        from .models import Reaction
-
-        # 3. حفظ المنشورات في قاعدة البيانات
         for item in posts_data:
             message = item.get('message', '')
             if not message:
-                continue # تخطي المنشورات بدون نص
-                
+                continue
+
             likes_count = item.get('reactions', {}).get('summary', {}).get('total_count', 0)
             comments_count = item.get('comments', {}).get('summary', {}).get('total_count', 0)
             shares_count = item.get('shares', {}).get('count', 0)
             created_time = item.get('created_time')
-            
+
             parent_post, _ = Post.objects.update_or_create(
                 raw_json={'facebook_id': item['id']},
                 defaults={
@@ -108,29 +103,24 @@ def fetch_facebook_posts(profile_id):
                     'engagement_json': {
                         'likes': likes_count,
                         'comments': comments_count,
-                        'shares': shares_count
-                    }
-                }
+                        'shares': shares_count,
+                    },
+                },
             )
             records_fetched += 1
-            
-            # حفظ التفاعلات
-            reactions_data = item.get('reactions', {}).get('data', [])
-            for rxn in reactions_data:
+
+            for rxn in item.get('reactions', {}).get('data', []):
                 Reaction.objects.update_or_create(
                     post=parent_post,
                     author_name=rxn.get('name', 'مستخدم فيسبوك'),
-                    defaults={'reaction_type': rxn.get('type', 'LIKE')}
+                    defaults={'reaction_type': rxn.get('type', 'LIKE')},
                 )
 
-            # سحب التعليقات التابعة للمنشور وحفظها
-            comments_data = item.get('comments', {}).get('data', [])
-            for comment in comments_data:
+            for comment in item.get('comments', {}).get('data', []):
                 comment_msg = comment.get('message', '')
                 if not comment_msg:
                     continue
-                    
-                comment_time = comment.get('created_time')
+
                 Post.objects.update_or_create(
                     raw_json={'facebook_id': comment['id'], 'parent_post_id': item['id']},
                     defaults={
@@ -138,21 +128,20 @@ def fetch_facebook_posts(profile_id):
                         'job': job,
                         'content': comment_msg,
                         'media_type': 'comment',
-                        'posted_at': comment_time,
+                        'posted_at': comment.get('created_time'),
                         'parent_post': parent_post,
                         'author_name': comment.get('from', {}).get('name', 'مستخدم فيسبوك'),
-                        'engagement_json': {} 
-                    }
+                        'engagement_json': {},
+                    },
                 )
                 records_fetched += 1
-        
-        # تحديث حالة الوظيفة بعد الانتهاء
+
         job.records_fetched = records_fetched
         job.status = 'completed'
-        job.save()
-        print(f"Successfully fetched {records_fetched} posts from Facebook.")
+        job.save(update_fields=['records_fetched', 'status'])
+        logger.info('Fetched %s records from Facebook for %s', records_fetched, page_name)
 
-    except Exception as e:
-        print(f"Sync failed: {str(e)}")
+    except Exception:
+        logger.exception('Facebook sync failed for profile %s', profile_id)
         job.status = 'failed'
-        job.save()
+        job.save(update_fields=['status'])

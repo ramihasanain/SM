@@ -1,6 +1,11 @@
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
 db.sqlite3
 media/
-out.html
 .env
+out.html
+error_log.txt
+*.bak
+diagnostic_output.txt
+populate_english_lexicon.py

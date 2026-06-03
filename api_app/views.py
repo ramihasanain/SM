@@ -1,3 +1,5 @@
+import logging
+
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -6,27 +8,15 @@ from django.db.models import Count
 from django.utils import timezone
 from datetime import timedelta
 
-try:
-    from .models import (
-        CustomUser, SocialProfile, PaymentTxn, ScrapeJob, Post, Reaction,
-        PlatformMeta, AnalysisBatch, AIModel, SentimentResult, TopicTag, Report, Notification
-    )
-except ImportError:
-    from api_app.models import (
-        CustomUser, SocialProfile, PaymentTxn, ScrapeJob, Post, Reaction,
-        PlatformMeta, AnalysisBatch, AIModel, SentimentResult, TopicTag, Report, Notification
-    )
-
-try:
-    from .serializers import (
-        CustomUserSerializer, SocialProfileSerializer, PaymentTxnSerializer, ScrapeJobSerializer, PostSerializer,
-        PlatformMetaSerializer, AnalysisBatchSerializer, AIModelSerializer, SentimentResultSerializer, TopicTagSerializer, ReportSerializer, NotificationSerializer
-    )
-except ImportError:
-    from api_app.serializers import (
-        CustomUserSerializer, SocialProfileSerializer, PaymentTxnSerializer, ScrapeJobSerializer, PostSerializer,
-        PlatformMetaSerializer, AnalysisBatchSerializer, AIModelSerializer, SentimentResultSerializer, TopicTagSerializer, ReportSerializer, NotificationSerializer
-    )
+from .models import (
+    CustomUser, SocialProfile, PaymentTxn, ScrapeJob, Post, Reaction,
+    PlatformMeta, AnalysisBatch, AIModel, SentimentResult, TopicTag, Report, Notification,
+)
+from .serializers import (
+    CustomUserSerializer, SocialProfileSerializer, PaymentTxnSerializer, ScrapeJobSerializer, PostSerializer,
+    PlatformMetaSerializer, AnalysisBatchSerializer, AIModelSerializer, SentimentResultSerializer,
+    TopicTagSerializer, ReportSerializer, NotificationSerializer,
+)
 
 from django.conf import settings
 
@@ -226,8 +216,8 @@ def trigger_background_analysis(posts_qs):
         thread_posts = Post.objects.filter(id__in=post_ids)
         try:
             bulk_analyze_posts(thread_posts)
-        except Exception as e:
-            print(f"Background analysis failed: {e}")
+        except Exception:
+            logging.getLogger(__name__).exception('Background analysis failed')
             
     thread = threading.Thread(target=bg_task)
     thread.daemon = True

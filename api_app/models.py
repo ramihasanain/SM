@@ -65,7 +65,6 @@ class ScrapeJob(models.Model):
         ('failed', 'Failed'),
     )
     profile = models.ForeignKey(SocialProfile, on_delete=models.CASCADE, related_name='scrape_jobs')
-    airflow_dag_id = models.CharField(max_length=255, null=True, blank=True)
     status = models.CharField(max_length=50, choices=JOB_STATUS_CHOICES, default='pending')
     started_at = models.DateTimeField(null=True, blank=True)
     records_fetched = models.IntegerField(default=0)

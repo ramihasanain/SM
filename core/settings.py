@@ -156,8 +156,11 @@ SIMPLE_JWT = {
 
 # OAuth Credentials (To be filled in production via environment variables)
 import os
-FACEBOOK_CLIENT_ID = os.environ.get('FACEBOOK_CLIENT_ID', '2021030568534896')
-FACEBOOK_CLIENT_SECRET = os.environ.get('FACEBOOK_CLIENT_SECRET', '362db6f64a46e81f5a24456614e9e192')
-FACEBOOK_REDIRECT_URI = os.environ.get('FACEBOOK_REDIRECT_URI', 'https://analytica-xi.vercel.app/oauth/facebook/callback')
+FACEBOOK_CLIENT_ID = os.environ.get('FACEBOOK_CLIENT_ID', '')
+FACEBOOK_CLIENT_SECRET = os.environ.get('FACEBOOK_CLIENT_SECRET', '')
+FACEBOOK_REDIRECT_URI = os.environ.get(
+    'FACEBOOK_REDIRECT_URI',
+    'https://analytica-xi.vercel.app/oauth/facebook/callback',
+)
 
 TOTP_ISSUER = os.environ.get('TOTP_ISSUER', 'Analytica')
