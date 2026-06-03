@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 import os
+import sys
 from datetime import timedelta
 
 from django.core.exceptions import ImproperlyConfigured
@@ -21,6 +22,13 @@ import dj_database_url
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(os.path.join(BASE_DIR, '.env'))
+
+# DigitalOcean/Heroku run collectstatic at build time before runtime env is always present.
+_BUILD_PHASE_COMMANDS = frozenset({'collectstatic', 'migrate', 'makemigrations', 'check'})
+
+
+def _is_build_phase() -> bool:
+    return len(sys.argv) > 1 and sys.argv[1] in _BUILD_PHASE_COMMANDS
 
 
 def _env(name: str, *, required: bool = False, default: str = '') -> str:
@@ -35,7 +43,14 @@ def _env(name: str, *, required: bool = False, default: str = '') -> str:
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-SECRET_KEY = _env('SECRET_KEY', required=True)
+SECRET_KEY = _env('SECRET_KEY')
+if not SECRET_KEY:
+    if _is_build_phase():
+        SECRET_KEY = 'build-phase-only-not-for-runtime'
+    else:
+        raise ImproperlyConfigured(
+            'Set the SECRET_KEY environment variable (e.g. in .env or DigitalOcean app config).'
+        )
 
 DEBUG = _env('DEBUG', default='False').lower() in ('1', 'true', 'yes')
 
@@ -172,6 +187,6 @@ GEMINI_API_KEY = _env('GEMINI_API_KEY')
 
 TOTP_ISSUER = _env('TOTP_ISSUER', default='Analytica')
 
-if not DEBUG:
+if not DEBUG and not _is_build_phase():
     for _name in ('FACEBOOK_CLIENT_ID', 'FACEBOOK_CLIENT_SECRET', 'FACEBOOK_REDIRECT_URI'):
         _env(_name, required=True)
