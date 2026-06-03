@@ -19,8 +19,7 @@ class Command(BaseCommand):
                     self.stdout.write(self.style.SUCCESS(f"Finished syncing profile {profile.id}"))
                 except Exception as e:
                     self.stdout.write(self.style.ERROR(f"Failed to sync profile {profile.id}: {str(e)}"))
-                    
-            elif profile.platform == 'twitter':
-                self.stdout.write(self.style.WARNING("Legacy Twitter profiles are no longer supported. Use Facebook only."))
+            else:
+                self.stdout.write(self.style.WARNING(f"Skipping unsupported platform: {profile.platform}"))
         
         self.stdout.write(self.style.SUCCESS('Done!'))

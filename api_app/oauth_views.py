@@ -93,9 +93,7 @@ def facebook_callback(request):
         return Response({'message': f'تم ربط {len(profile_ids)} صفحة بنجاح', 'profile_ids': profile_ids})
         
     except Exception as e:
-        import traceback
-        with open('error_log.txt', 'w') as f:
-            f.write(traceback.format_exc())
-            f.write(f"\nData was: {locals().get('data')}")
+        import logging
+        logging.getLogger(__name__).exception('Facebook OAuth callback failed')
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
