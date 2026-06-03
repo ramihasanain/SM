@@ -991,7 +991,7 @@ def run_batch_ai_topics(request):
     from .sentiment_engine import batch_ai_topic_modeling
     import os
     
-    api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("ai_key")
+    api_key = settings.GEMINI_API_KEY
     if not api_key:
         return Response({'error': 'Gemini API key is missing'}, status=400)
         

@@ -12,21 +12,32 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 import os
+from datetime import timedelta
+
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
+import dj_database_url
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 
+def _env(name: str, *, required: bool = False, default: str = '') -> str:
+    value = (os.environ.get(name) or default).strip()
+    if required and not value:
+        raise ImproperlyConfigured(
+            f'Set the {name} environment variable (e.g. in .env or DigitalOcean app config).'
+        )
+    return value
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-$stw+srlsxobs2qnszisbc-t5iz_jxvs7($d9tmc_u2o(+sc!4'
+SECRET_KEY = _env('SECRET_KEY', required=True)
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DEBUG', 'True') == 'True'
+DEBUG = _env('DEBUG', default='False').lower() in ('1', 'true', 'yes')
 
 ALLOWED_HOSTS = ['*']
 
@@ -80,8 +91,6 @@ WSGI_APPLICATION = 'core.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
-
-import dj_database_url
 
 DATABASES = {
     'default': dj_database_url.config(
@@ -146,7 +155,6 @@ REST_FRAMEWORK = {
     ],
 }
 
-from datetime import timedelta
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
@@ -154,13 +162,16 @@ SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
-# OAuth Credentials (To be filled in production via environment variables)
-import os
-FACEBOOK_CLIENT_ID = os.environ.get('FACEBOOK_CLIENT_ID', '')
-FACEBOOK_CLIENT_SECRET = os.environ.get('FACEBOOK_CLIENT_SECRET', '')
-FACEBOOK_REDIRECT_URI = os.environ.get(
-    'FACEBOOK_REDIRECT_URI',
-    'https://analytica-xi.vercel.app/oauth/facebook/callback',
-)
+# --- Secrets & external services (environment variables only) ---
 
-TOTP_ISSUER = os.environ.get('TOTP_ISSUER', 'Analytica')
+FACEBOOK_CLIENT_ID = _env('FACEBOOK_CLIENT_ID')
+FACEBOOK_CLIENT_SECRET = _env('FACEBOOK_CLIENT_SECRET')
+FACEBOOK_REDIRECT_URI = _env('FACEBOOK_REDIRECT_URI')
+
+GEMINI_API_KEY = _env('GEMINI_API_KEY')
+
+TOTP_ISSUER = _env('TOTP_ISSUER', default='Analytica')
+
+if not DEBUG:
+    for _name in ('FACEBOOK_CLIENT_ID', 'FACEBOOK_CLIENT_SECRET', 'FACEBOOK_REDIRECT_URI'):
+        _env(_name, required=True)

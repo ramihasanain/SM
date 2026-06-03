@@ -1,6 +1,7 @@
 import os
-
 import re
+
+from django.conf import settings
 
 import json
 import time
@@ -1117,7 +1118,7 @@ def analyze_text_hybrid(text, parent_text=None, inherited_topic=None):
     if not text or not text.strip():
         return analyze_sentiment_local("")
         
-    api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("ai_key")
+    api_key = settings.GEMINI_API_KEY
     is_sarcastic = False
     sarcasm_explanation = ""
     engine_used = "Local Lexicon Engine"
@@ -1445,8 +1446,7 @@ def bulk_analyze_posts(posts_qs, batch=None):
 
     # Phase 2: Batch AI Topic Modeling for newly analyzed parent posts
     if newly_analyzed_parents:
-        import os
-        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("ai_key")
+        api_key = settings.GEMINI_API_KEY
         if api_key and HAS_GEMINI_SDK:
             print(f"Running batch AI topic modeling for {len(newly_analyzed_parents)} parent posts...")
             posts_data = [{"id": p.id, "content": p.content[:400]} for p in newly_analyzed_parents]

@@ -11,10 +11,24 @@ from urllib.parse import urlencode
 
 from .models import SocialProfile
 
+
+def _facebook_oauth_configured():
+    return bool(
+        settings.FACEBOOK_CLIENT_ID
+        and settings.FACEBOOK_CLIENT_SECRET
+        and settings.FACEBOOK_REDIRECT_URI
+    )
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def facebook_login(request):
     """Returns the Facebook OAuth authorization URL"""
+    if not _facebook_oauth_configured():
+        return Response(
+            {'error': 'Facebook OAuth is not configured on the server.'},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
     params = {
         'client_id': settings.FACEBOOK_CLIENT_ID,
         'redirect_uri': settings.FACEBOOK_REDIRECT_URI,
@@ -29,6 +43,11 @@ def facebook_login(request):
 @permission_classes([IsAuthenticated])
 def facebook_callback(request):
     """Exchanges code for access token and saves profile"""
+    if not _facebook_oauth_configured():
+        return Response(
+            {'error': 'Facebook OAuth is not configured on the server.'},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
     code = request.data.get('code')
     if not code:
         return Response({'error': 'No code provided'}, status=status.HTTP_400_BAD_REQUEST)
