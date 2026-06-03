@@ -993,7 +993,12 @@ def run_batch_ai_topics(request):
     
     api_key = settings.GEMINI_API_KEY
     if not api_key:
-        return Response({'error': 'Gemini API key is missing'}, status=400)
+        return Response(
+            {
+                'error': 'مفتاح Gemini غير موجود. أضف GEMINI_API_KEY (أو ai_key) في متغيرات البيئة على السيرفر.',
+            },
+            status=400,
+        )
         
     # Exclude posts where sentiment engine_used contains 'Gemini' or 'Batch'
     posts = Post.objects.filter(

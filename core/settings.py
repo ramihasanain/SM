@@ -183,7 +183,8 @@ FACEBOOK_CLIENT_ID = _env('FACEBOOK_CLIENT_ID')
 FACEBOOK_CLIENT_SECRET = _env('FACEBOOK_CLIENT_SECRET')
 FACEBOOK_REDIRECT_URI = _env('FACEBOOK_REDIRECT_URI')
 
-GEMINI_API_KEY = _env('GEMINI_API_KEY')
+# Prefer GEMINI_API_KEY; accept legacy DigitalOcean name "ai_key" during migration.
+GEMINI_API_KEY = _env('GEMINI_API_KEY') or _env('ai_key')
 
 TOTP_ISSUER = _env('TOTP_ISSUER', default='Analytica')
 
